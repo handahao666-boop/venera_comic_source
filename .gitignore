@@ -1,0 +1,10 @@
+# 系统/编辑器杂项
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# 测试/临时文件(不入库)
+*.log
+debug_*.js
+_venera_stage/
