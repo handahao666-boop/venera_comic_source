@@ -12,6 +12,12 @@
         "version": "1.1.6"
     },
     {
+        "name": "嗶哩漫畫",
+        "fileName": "bilimanga.js",
+        "key": "bilimanga",
+        "version": "1.1.0"
+    },
+    {
         "name": "CCC追漫台",
         "fileName": "ccc.js",
         "key": "ccc",
