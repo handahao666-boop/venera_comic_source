@@ -2,22 +2,39 @@
 
 本仓库由 36 个漫画源整理而成, 用于 Venera 自动配置导入。
 
+## 免责声明
+
+本仓库仅供个人学习与研究使用，所有漫画内容版权归原作者所有。
+
+- 本仓库不对任何第三方网站、内容的版权纠纷承担责任
+- 使用本仓库所产生的一切法律责任由使用者自行承担
+- 请在法律允许的范围内使用，请勿用于商业用途
+- 本项目不是 Venera 官方仓库，也不托管任何漫画内容
+- 仅用于用户有权访问的网页内容，不绕过付费、验证码、DRM 或访问控制
+
 ## 使用方法
 
-1. 把本目录(除 README 外的全部文件)上传到 GitHub/Gitee 等可直连的仓库, 推荐目录结构与本目录一致(源文件与 index.json 同级)。
-2. 在 Venera 中进入「设置 → 漫画源」, 打开「Comic Source list / 源列表」, 填入 index.json 的地址:
+1. 打开 Venera 漫画阅读器应用
+2. 进入「漫画源」界面
+3. 点击「漫画源列表」
+4. 更改仓库地址为（镜像，国内推荐）:
 
 ```
-https://cdn.jsdelivr.net/gh/<你的用户名>/<仓库名>@main/index.json
+https://cdn.jsdelivr.net/gh/handahao666-boop/venera_comic_source@main/index.json
 ```
 
 或者使用 GitHub 直链:
 
 ```
-https://raw.githubusercontent.com/<你的用户名>/<仓库名>/main/index.json
+https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/index.json
 ```
 
-3. 点击确定/刷新, 列表会刷出全部源, 勾选即可一键添加。
+5. 点击确定/刷新，列表会刷出全部源，勾选即可一键添加。
+
+## 漫画源来源
+
+- 与官方源名字相同的，均来自官方源或由官方源修复而来
+- 部分漫画源如：嗶哩漫畫、飞翔漫画、瓜子漫画、来漫画（分流）、零搬运网、W漫画，均来自于 GitHub 其他人发布的漫画源
 
 ## 源清单
 
@@ -58,11 +75,41 @@ https://raw.githubusercontent.com/<你的用户名>/<仓库名>/main/index.json
 | wmanhua.js | W漫画 | wmanhua | v1.0.1 |
 | youku.js | 优酷漫画 (修复版) | ykmh | v1.0.6 |
 | zaimanhua.js | 再漫画 | zaimanhua | v1.0.2 |
-| zerobyw33.js | zero搬运网 | zerobyw33 | v1.1.0 |
+| zerobyw33.js | zero搬运网 | zerobyw33 | v1.2.0 |
 
-## 说明
+## 创建一个新的漫画源
 
-- 文件名中的空格/括号已规范化为安全文件名(例如 `copy_manga(5).js` → `copy_manga.js`), index.json 已同步引用新文件名。
-- 如需新增源: 把 .js 文件放入本目录并重新生成 index.json。
-- 上传时把本目录内文件(不含父级)放到仓库根目录即可: index.json 与全部 .js 同级。
-- 后续维护: 修改/新增 .js 后运行 `node prepare_venera_repo.js venera-configs-auto venera-configs-auto` 重新生成 index.json 与 README。
+- 详见 [Venera 漫画源开发日志](docs/Venera漫画源开发日志.md)。
+
+补充说明：
+
+- 本仓库只存放 `.js` 源文件与 `index.json`，源文件与 `index.json` 需同级。
+- 新增源：把 `.js` 文件放入仓库根目录，并在 `index.json` 中增加一条记录（文件名与 `fileName` 必须完全一致）。
+
+```json
+{
+  "name": "源名称",
+  "fileName": "your_source.js",
+  "key": "your_key",
+  "version": "1.0.0"
+}
+```
+
+- 源格式与可用 API 见官方文档：[Venera 漫画源文档](https://github.com/venera-app/venera/blob/master/doc/comic_source.md) 与 [JavaScript API](https://github.com/venera-app/venera/blob/master/doc/js_api.md)。
+
+## 说明与维护
+
+- 文件名中的空格/括号已规范化为安全文件名（例如 `copy_manga(5).js` → `copy_manga.js`），`index.json` 已同步引用新文件名。
+- 上传时把仓库内文件放在根目录即可：`index.json` 与全部 `.js` 同级。
+- 后续维护：修改/新增 `.js` 后重新生成 `index.json`，并同步更新上方源清单表格与本说明。
+
+## 版本变更
+
+| 日期 | 变更 |
+| --- | --- |
+| 2026-09 | 仓库建立，收录 36 个漫画源；新增免责声明、使用方法、漫画源来源说明与开发日志 |
+| 2026-09 | zero搬运网 `zerobyw33.js` 更新到 v1.2.0：新增账号登录（账号密码登录 + 注册入口）、修复章节列表不完整、补充需登录/VIP 章节提示 |
+
+## 关于本项目
+
+- 本项目由 DeepSeek V4 Flash / V4 Pro 开发，或许有不足之处，如发现问题欢迎反馈。

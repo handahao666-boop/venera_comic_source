@@ -2,7 +2,7 @@ class ZeroByW33 extends ComicSource {
 
     name = "zero搬运网"
     key = "zerobyw33"
-    version = "1.1.0"
+    version = "1.2.0"
     minAppVersion = "1.6.0"
     url = "https://cdn.jsdelivr.net/gh/meaninglesslyy/venera-configs@main/zerobyw33.js"
 
@@ -16,6 +16,125 @@ class ZeroByW33 extends ComicSource {
         1: "卖肉", 6: "后宫", 22: "冒险", 23: "奇幻", 13: "搞笑",
         28: "日常", 35: "职业", 29: "体育", 15: "战斗", 31: "爱情",
         34: "机战", 40: "悬疑", 41: "美食", 42: "百合", 43: "等网源",
+    }
+
+    // ============ 账号登录（Discuz! 论坛表单登录） ============
+    // 站点为 Discuz! X（模板 discuzx5），登录流程：
+    //   1) GET  member.php?mod=logging&action=login  建立会话 cookie，并从登录表单取 formhash / loginhash
+    //   2) POST 同一 action（已带 loginsubmit=yes&formhash=..&loginhash=..）提交 username / password
+    // 实测（2026-09-15，游客身份提交错误凭据）：服务端返回「登录失败，您还可以尝试 4 次」，
+    // 证明 formhash/loginhash 与会话 cookie 的取用方式、POST 字段格式均被站点接受。
+    // 登录后 cookie 由 Venera 的 CookieJar 自动保存，可直接用于解锁「需登录」章节。
+
+    account = {
+        login: async (account, pwd) => {
+            await this.ensureDomain()
+            let uname = String(account || "").trim()
+            let pass = String(pwd || "")
+            if (!uname || !pass) throw "请输入用户名和密码"
+
+            let loginUrl = this.loginPageUrl()
+            let pageRes = await Network.get(loginUrl, this.pageHeaders())
+            if (pageRes.status !== 200) throw "打开登录页失败: " + pageRes.status
+
+            let form = this.parseLoginForm(pageRes.body)
+            if (!form.formhash) throw "登录页解析失败：未取到 formhash（站点可能改版）"
+
+            let action = form.action
+            // 表单 action 为相对路径（如 member.php?mod=logging&...），需补全为绝对地址
+            if (!action) action = "member.php?mod=logging&action=login&loginsubmit=yes"
+            if (action.startsWith("//")) action = "https:" + action
+            else if (!/^https?:\/\//i.test(action)) action = this.base + "/" + action.replace(/^\/+/, "")
+            if (action.indexOf("loginsubmit=yes") === -1) {
+                action += (action.indexOf("?") === -1 ? "?" : "&") + "loginsubmit=yes"
+            }
+
+            let headers = this.pageHeaders()
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            headers["Referer"] = loginUrl
+            headers["Origin"] = this.base
+
+            let body =
+                "formhash=" + encodeURIComponent(form.formhash) +
+                "&referer=" + encodeURIComponent(this.base + "/") +
+                "&loginfield=" +
+                "&username=" + encodeURIComponent(uname) +
+                "&password=" + encodeURIComponent(pass) +
+                "&questionid=0&answer=&cookietime=2592000&loginsubmit=true"
+
+            let res = await Network.post(action, headers, body)
+            if (res.status !== 200) throw "登录请求失败: " + res.status
+
+            let err = this.loginResultMessage(res.body)
+            if (err) throw err
+            return "ok"
+        },
+
+        // 退出登录：清除本站 cookie
+        logout: () => {
+            Network.deleteCookies(this.base)
+            return "ok"
+        },
+
+        // 「注册账号」按钮跳转到站点注册页
+        registerWebsite: "https://www.zerobyw33.com/member.php?mod=register",
+    }
+
+    // 登录页地址
+    loginPageUrl() {
+        return this.base + "/member.php?mod=logging&action=login"
+    }
+
+    /**
+     * 解析 Discuz 登录表单：返回 { action, formhash, loginhash }
+     * 表单形如 <form id="loginform_XXXX" action="member.php?mod=logging&action=login&loginsubmit=yes&formhash=..&loginhash=..">
+     */
+    parseLoginForm(html) {
+        let doc = new HtmlDocument(html)
+        let action = ""
+        let formhash = ""
+        let loginhash = ""
+        try {
+            let forms = doc.querySelectorAll("form")
+            for (let i = 0; i < forms.length; i++) {
+                let id = forms[i].attributes["id"] || ""
+                let act = forms[i].attributes["action"] || ""
+                if (id.indexOf("loginform") === 0 || act.indexOf("loginsubmit=yes") !== -1) {
+                    action = act
+                    let fm = act.match(/formhash=([0-9a-fA-F]+)/)
+                    if (fm) formhash = fm[1]
+                    let lm = act.match(/loginhash=([A-Za-z0-9]+)/)
+                    if (lm) loginhash = lm[1]
+                    break
+                }
+            }
+            // 兜底：隐藏域 formhash / 页面内 loginhash
+            if (!formhash) {
+                let hidden = doc.querySelector("input[name=formhash]")
+                if (hidden) formhash = hidden.attributes["value"] || ""
+            }
+        } finally {
+            doc.dispose()
+        }
+        if (!loginhash) {
+            let m = String(html || "").match(/loginhash=([A-Za-z0-9]+)/)
+            if (m) loginhash = m[1]
+        }
+        return { action, formhash, loginhash }
+    }
+
+    /**
+     * 判定登录响应：成功返回空字符串，失败返回可读的中文原因。
+     * Discuz 成功时会输出「欢迎您回来 / 现在将转入 / succeedhandle('login')」。
+     */
+    loginResultMessage(html) {
+        let text = String(html || "")
+        if (/欢迎您回来|现在将转入|succeedhandle\s*\(\s*['"]login['"]/i.test(text)) return ""
+        let m = text.match(/登录失败[^<>\n]{0,60}/)
+        if (m) return m[0].trim()
+        let m2 = text.match(/(密码错误|用户名不存在|该用户不存在|安全提问|验证码|请填写|用户名无效)[^<>\n]{0,40}/)
+        if (m2) return m2[0].trim()
+        return "登录失败（站点未返回登录成功标记，请核对账号密码后重试）"
     }
 
     // ============ 域名自动解析 ============
@@ -139,6 +258,36 @@ class ZeroByW33 extends ComicSource {
         })
         doc.dispose()
         return maxPage
+    }
+
+    /**
+     * 解析章节目录。优先使用页面内 `mangaDownloadChapters` JSON —— 它包含完整章节；
+     * 未登录时站点把「需登录」章节渲染成 div（无 href），只扫链接会漏章节。
+     * 已取证：kuid=22790 锚点仅 5 话，而 JSON 为 22 话（1-4、24-39、601）。
+     * JSON 解析失败时回退到链接扫描。
+     */
+    parseChapters(body, doc) {
+        let chapters = {}
+        let m = String(body || "").match(/mangaDownloadChapters\s*=\s*(\[[\s\S]*?\])\s*;/)
+        if (m) {
+            try {
+                let list = JSON.parse(m[1])
+                for (let i = 0; i < list.length; i++) {
+                    let zjid = String(list[i].zjid || "").trim()
+                    let name = String(list[i].zjname || "").trim()
+                    if (zjid) chapters[zjid] = name || zjid
+                }
+            } catch (e) {}
+        }
+        if (!Object.keys(chapters).length) {
+            doc.querySelectorAll("a").forEach(a => {
+                let href = a.attributes["href"] || ""
+                let zjid = href.match(/zjid=(\d+)/)?.[1]
+                let name = a.text?.trim() || ""
+                if (zjid && name) chapters[zjid] = name
+            })
+        }
+        return chapters
     }
 
     // ============ 构建筛选 URL ============
@@ -308,15 +457,7 @@ class ZeroByW33 extends ComicSource {
             }
 
             // 章节列表
-            let chapters = {}
-            doc.querySelectorAll("a").forEach(a => {
-                let href = a.attributes["href"] || ""
-                let zjid = href.match(/zjid=(\d+)/)?.[1]
-                let name = a.text?.trim() || ""
-                if (zjid && name) {
-                    chapters[zjid] = name
-                }
-            })
+            let chapters = this.parseChapters(body, doc)
 
             doc.dispose()
 
@@ -345,7 +486,16 @@ class ZeroByW33 extends ComicSource {
                 if (src) images.push(this.normalizeUrl(src))
             })
             doc.dispose()
-            if (!images.length) throw "未解析到图片"
+            if (!images.length) {
+                // 未登录时站点会把「需登录」章节渲染成 0 张图 + 登录提示（已取证）。
+                if (/需要登录|请先登录|登录后/.test(body)) {
+                    throw "该章节需要登录后阅读，请在漫画源设置中登录账号"
+                }
+                if (/VIP|会员专属/.test(body)) {
+                    throw "该章节为 VIP 会员专属，请到官网开通后阅读"
+                }
+                throw "未解析到图片"
+            }
             return { images }
         },
     }
