@@ -1,6 +1,6 @@
 # Venera 漫画源自动配置仓库
 
-本仓库由 36 个漫画源整理而成, 用于 Venera 自动配置导入。
+本仓库由 37 个漫画源整理而成, 用于 Venera 自动配置导入。
 
 ## 免责声明
 
@@ -34,7 +34,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 ## 漫画源来源
 
 - 与官方源名字相同的，均来自官方源或由官方源修复而来
-- 部分漫画源如：嗶哩漫畫、飞翔漫画、瓜子漫画、来漫画（分流）、零搬运网、W漫画，均来自于 GitHub 其他人发布的漫画源
+- 部分漫画源如：嗶哩漫畫、飞翔漫画、瓜子漫画、来漫画（分流）、零搬运网、W漫画、NoyManga，均来自于 GitHub 其他人发布的漫画源
 
 ## 源清单
 
@@ -66,6 +66,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | mh4399.js | 4399漫画网 | mh4399 | v1.0.3 |
 | mojoin_fixed_v107.js | MOJOIN | mojoin_v2 | v1.0.7 |
 | mycomic.js | MYCOMIC | mycomic | v1.1.0 |
+| noymanga.js | NoyManga | noymanga | v1.1.3 |
 | rawkuma.js | Rawkuma | rawkuma | v1.1.0 |
 | rumanhua_fixed_v16.js | 如漫画 | rumanhua_fixed_v15 | v1.2.6 |
 | sfacg_manhua.js | SF漫画 | sfacg_manhua | v1.0.0 |
@@ -109,6 +110,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | --- | --- |
 | 2026-09 | 仓库建立，收录 36 个漫画源；新增免责声明、使用方法、漫画源来源说明与开发日志 |
 | 2026-09 | zero搬运网 `zerobyw33.js` 更新到 v1.2.0：新增账号登录（账号密码登录 + 注册入口）、修复章节列表不完整、补充需登录/VIP 章节提示 |
+| 2026-09 | 新增 NoyManga（`noymanga.js` v1.1.3），源总数更新为 37 |
 
 ## 关于本项目
 
