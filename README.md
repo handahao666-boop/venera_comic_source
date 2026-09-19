@@ -1,6 +1,6 @@
 # Venera 漫画源自动配置仓库
 
-本仓库由 37 个漫画源整理而成, 用于 Venera 自动配置导入。
+本仓库由 38 个漫画源整理而成, 用于 Venera 自动配置导入。
 
 ## 免责声明
 
@@ -74,6 +74,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | tencent_comic_official.js | 腾讯动漫（正版） | qq_comic_official_v1 | v1.0.3 |
 | tuku_cc.js | 图库漫画 | tuku_cc | v1.0.1 |
 | wmanhua.js | W漫画 | wmanhua | v1.0.1 |
+| webtoons_zh_hant.js | LINE WEBTOON | webtoons_zh_hant | v1.0.0 |
 | youku.js | 优酷漫画 (修复版) | ykmh | v1.0.6 |
 | zaimanhua.js | 再漫画 | zaimanhua | v1.0.2 |
 | zerobyw33.js | zero搬运网 | zerobyw33 | v1.2.0 |
@@ -111,6 +112,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | 2026-09 | 仓库建立，收录 36 个漫画源；新增免责声明、使用方法、漫画源来源说明与开发日志 |
 | 2026-09 | zero搬运网 `zerobyw33.js` 更新到 v1.2.0：新增账号登录（账号密码登录 + 注册入口）、修复章节列表不完整、补充需登录/VIP 章节提示 |
 | 2026-09 | 新增 NoyManga（`noymanga.js` v1.1.3），源总数更新为 37 |
+| 2026-09 | 新增 LINE WEBTOON 繁中站（`webtoons_zh_hant.js` v1.0.0），源总数更新为 38；专项日志见 `webtoons_zh_hant_development_log.md` |
 
 ## 关于本项目
 

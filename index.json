@@ -204,6 +204,12 @@
         "version": "1.0.1"
     },
     {
+        "name": "LINE WEBTOON",
+        "fileName": "webtoons_zh_hant.js",
+        "key": "webtoons_zh_hant",
+        "version": "1.0.0"
+    },
+    {
         "name": "优酷漫画 (修复版)",
         "fileName": "youku.js",
         "key": "ykmh",
