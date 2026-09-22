@@ -108,6 +108,12 @@
         "version": "1.2.1"
     },
     {
+        "name": "51漫画",
+        "fileName": "manga51.js",
+        "key": "manga51",
+        "version": "1.2.0"
+    },
+    {
         "name": "MangaDex",
         "fileName": "manga_dex.js",
         "key": "manga_dex",
