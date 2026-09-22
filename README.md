@@ -1,6 +1,6 @@
 # Venera 漫画源自动配置仓库
 
-本仓库由 38 个漫画源整理而成, 用于 Venera 自动配置导入。
+本仓库由 39 个漫画源整理而成, 用于 Venera 自动配置导入。
 
 ## 免责声明
 
@@ -54,6 +54,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | gfmh.js | 古风漫画 | GfmhApp | v1.3.0 |
 | goda.js | GoDa漫画 | goda | v1.2.1 |
 | guazi_manhua_v1.1.0.js | 瓜子漫画 | guazimanhua | v1.0.4 |
+| hipmh.js | 嬉皮漫畫 | hipmh | v1.0.1 |
 | ikmmh_v2.js | 爱看漫 | ikmmh_v2 | v3.0.0 |
 | komiic_dual.js | Komiic | Komiic | v1.0.8 |
 | laimanhua_split_hosts_v1.2.1_configurable.js | 来漫画（分流） | laimanhua_split | v1.2.1 |
@@ -113,6 +114,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | 2026-09 | zero搬运网 `zerobyw33.js` 更新到 v1.2.0：新增账号登录（账号密码登录 + 注册入口）、修复章节列表不完整、补充需登录/VIP 章节提示 |
 | 2026-09 | 新增 NoyManga（`noymanga.js` v1.1.3），源总数更新为 37 |
 | 2026-09 | 新增 LINE WEBTOON 繁中站（`webtoons_zh_hant.js` v1.0.0），源总数更新为 38；专项日志见 `webtoons_zh_hant_development_log.md` |
+| 2026-09 | 新增 嬉皮漫畫（`hipmh.js` v1.0.1），源总数更新为 39；专项日志见 `hipmh_development_log.md` |
 
 ## 关于本项目
 
