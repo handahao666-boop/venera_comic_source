@@ -6,7 +6,17 @@ class ComicWalker extends ComicSource {
   url =
     "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/comic_walker.js";
 
-  api_key = "ytBrdQ2ZYdRQguqEusVLxQVUgakNnVht";
+  settings = {
+    api_key: {
+      title: "X-API-Environment-Key",
+      type: "input",
+      default: "ytBrdQ2ZYdRQguqEusVLxQVUgakNnVht",
+    },
+  };
+
+  get api_key() {
+    return this.loadSetting("api_key") || this.settings.api_key.default;
+  }
 
   // Keep in sync with the latest ComicWalker app release.
   // Auto-updated from the App Store in init(), and again on upgrade_required.
