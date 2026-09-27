@@ -1,9 +1,27 @@
+// 动漫屋 (m.dm5.com / www.dm5.com) Venera 漫画源
+// 版本: 7.0.2
+// v7.0.2 修复：分类点进去 404。旧版 categoryParams 用的是 tag-rexue / hktw / jpkr / china / euus，
+//   拼出的 /manhua-list-tag-rexue/ 这类路径在站点上根本不存在（实测 404）。站点真实规则是
+//   /manhua-list[-tag{n}|-area{n}][-group{n}][-st{n}][-s{n}][-pay{n}][-p{n}]/，已按真网取证的
+//   数字 ID 重建四个 part（题材/地区/受众/状态）并把排序、付费改成官方格式的 optionList。
+//   详见 dm5_bilimanga_development_log.md 第三节。
+// v7.0.1 修复（按《Venera 漫画源开发日志》取证）：
+//   1) 封面显示异常：站点同一张卡片里混有竖版封面(180x240, manga-list-2-cover-img)、
+//      横版宣传图(320x246, manga-list-1/rank-list-cover-img)、首页横幅(880x385)和站点 UI 图标。
+//      旧版取 <a> 里第一张图，三类非封面图会被当成封面，在竖版网格里被裁成横条。
+//      新增 isRealCover()/pickCover()，只接受真实竖版封面，挑不到就跳过该条目。
+//   2) 详情页标题永远显示「漫画 {slug}」：移动版没有 h1/.book-title/.comic-title，
+//      真实标题在 .detail-main-info-title。已补上，并补 .normal-top-title 兜底。
+//   3) 详情页封面为空或取到 /chaptercover/ 无关图：真实封面在 .detail-main-cover img。
+//   4) 章节列表串到别的漫画：旧版扫全页 /m{id}/ 链接，命中「相关推荐」里其它漫画的
+//      「最新 第N话」。现限定 .detail-list-select（站点对限制漫画隐藏该容器，此时返回空）。
+//   5) 详情页补作者/标签/正文简介，并清理章节标题里的更新日期。
 class DM5 extends ComicSource {
     name = "动漫屋";
 
     key = "dm5";
 
-    version = "7.0.0";
+    version = "7.0.2";
 
     minAppVersion = "1.6.0";
 
@@ -177,6 +195,94 @@ class DM5 extends ComicSource {
             "";
 
         return this.toAbsoluteUrl(url);
+    }
+
+    // ==================================================
+    // 封面识别（v7.0.1 修复「封面显示有问题」）
+    // ==================================================
+    //
+    // 站点在同一个 <a> 里会混入用途完全不同的图片：
+    //   manga-list-2-cover-img / book-list-cover-img / detail-main-bg
+    //        -> 竖版封面 180x240，才是真正的封面
+    //   manga-list-1-cover-img / rank-list-cover-img
+    //        -> 横版宣传图 320x246，实测是横构图插图，不是封面
+    //   无 class 的 880x385
+    //        -> 首页顶部横幅
+    //   /dm5/images/... 下的 index-menu-*.png 等
+    //        -> 站点 UI 图标，根本不是漫画
+    //
+    // 旧版直接 a.querySelector("img") 取第一张图，于是这四类都会被当成封面，
+    // 在 Venera 的竖版网格里被裁成奇怪的横条 —— 这就是封面显示异常的根因。
+    isRealCover(url, className) {
+        const s = String(url || "");
+
+        if (!/^https?:\/\//i.test(s)) {
+            return false;
+        }
+
+        // 横版宣传图 / 首页横幅
+        if (s.indexOf("_320x246") >= 0 || s.indexOf("_880x385") >= 0) {
+            return false;
+        }
+
+        // 站点静态资源（UI 图标、logo、广告图）
+        if (/\/dm5\/images?\//i.test(s) || /\/images\/mobile\//i.test(s)) {
+            return false;
+        }
+
+        if (/\.(?:gif|svg)(?:\?|$)/i.test(s)) {
+            return false;
+        }
+
+        const cls = String(className || "");
+
+        if (cls.indexOf("manga-list-1-cover-img") >= 0) {
+            return false;
+        }
+
+        if (cls.indexOf("rank-list-cover-img") >= 0) {
+            return false;
+        }
+
+        return true;
+    }
+
+    // 在卡片里挑一张真正的竖版封面；挑不到返回空串（调用方跳过该条目）
+    pickCover(anchor) {
+        if (!anchor) {
+            return "";
+        }
+
+        const preferred = [
+            "manga-list-2-cover-img",
+            "book-list-cover-img",
+            "detail-main-cover-img",
+            "detail-main-bg"
+        ];
+
+        for (const cls of preferred) {
+            const img = anchor.querySelector("img." + cls);
+
+            if (!img) {
+                continue;
+            }
+
+            const url = this.getImageUrl(img);
+
+            if (this.isRealCover(url, cls)) {
+                return url;
+            }
+        }
+
+        for (const img of anchor.querySelectorAll("img")) {
+            const url = this.getImageUrl(img);
+
+            if (this.isRealCover(url, img.attributes["class"])) {
+                return url;
+            }
+        }
+
+        return "";
     }
 
     // ==================================================
@@ -562,23 +668,34 @@ class DM5 extends ComicSource {
                         );
                     }
 
+                    // 竖版封面卡片既没有文本也没有 img.alt，标题只放在 <a title>
+                    if (!title) {
+                        title = this.cleanText(
+                            a.attributes["title"] || ""
+                        );
+                    }
+
                     if (!title) {
                         continue;
                     }
 
-                    const cover = this.getImageUrl(
-                        img
-                    );
+                    // 只接受真正的竖版封面：横版宣传图/首页横幅/站点图标一律跳过
+                    const cover = this.pickCover(a);
+
+                    // 注意：必须在确认有封面之后才标记 seen。
+                    // 同一本漫画可能同时出现在「横版缩略图」模块和「竖版封面」模块里，
+                    // 若提前标记 seen，后面那条带正确封面的记录会被去重掉（实测少 10 本）。
+                    if (!cover) {
+                        continue;
+                    }
 
                     seen.add(id);
 
-                    if (cover) {
-                        comics.push({
-                            id: String(id),
-                            title: String(title),
-                            cover: String(cover)
-                        });
-                    }
+                    comics.push({
+                        id: String(id),
+                        title: String(title),
+                        cover: String(cover)
+                    });
                 }
 
                 return {
@@ -671,15 +788,21 @@ class DM5 extends ComicSource {
                     );
                 }
 
+                // 竖版封面卡片没有文本也没有 img.alt，标题只放在 <a title>
+                if (!title) {
+                    title = this.cleanText(
+                        a.attributes["title"] || ""
+                    );
+                }
+
                 if (!title) {
                     title =
                         "漫画 " +
                         String(id);
                 }
 
-                const cover = this.getImageUrl(
-                    img
-                );
+                // 只接受真正的竖版封面
+                const cover = this.pickCover(a);
 
                 seen.add(id);
 
@@ -709,6 +832,36 @@ class DM5 extends ComicSource {
     // 分类
     // ==================================================
 
+    // ==================================================
+    // 分类（v7.0.2 修复）
+    // ==================================================
+    //
+    // 站点真实的分类 URL 是 manhua-list 加各维度后缀，顺序固定：
+    //   /manhua-list[-tag{n}|-area{n}][-group{n}][-st{n}][-s{n}][-pay{n}][-p{n}]/
+    // 旧版参数（tag-rexue / hktw / jpkr / china / euus）实测全部 404 ——
+    // /manhua-list-tag-rexue/ 这种路径在站点上根本不存在，所以点分类打不开。
+    //
+    // 维度 ID（真网逐个取证，2026-09-27）：
+    //   题材 tag  ：校园1 冒险2 历史4 后宫8 战争12 奇幻14 魔法15 悬疑17 神鬼20
+    //              科幻25 恋爱26 同人30 热血31 推理33 运动34 绅士36 搞笑37 机甲40
+    //   地区 area ：港台35 日韩36 大陆37 欧美52
+    //   受众 group：少年向1 少女向2 青年向3
+    //   状态 st   ：连载1 完结2
+    //   排序 s    ：最热10 最近更新2 最新上架18
+    //   付费 pay  ：免费0 付费1 VIP免费2
+    // 实测组合：tag+st+s+p ✓、area+group+st+s+p ✓、tag+group+st+s+p ✓、tag+pay+st+p ✓；
+    // 但 **题材与地区不能同时用**（/manhua-list-tag31-area35/ 实测 404）。
+    static dm5Tags = [
+        ["校园", "tag1"], ["冒险", "tag2"], ["历史", "tag4"], ["后宫", "tag8"],
+        ["战争", "tag12"], ["奇幻", "tag14"], ["魔法", "tag15"], ["悬疑", "tag17"],
+        ["神鬼", "tag20"], ["科幻", "tag25"], ["恋爱", "tag26"], ["同人", "tag30"],
+        ["热血", "tag31"], ["推理", "tag33"], ["运动", "tag34"], ["绅士", "tag36"],
+        ["搞笑", "tag37"], ["机甲", "tag40"]
+    ];
+    static dm5Areas = [["港台", "area35"], ["日韩", "area36"], ["大陆", "area37"], ["欧美", "area52"]];
+    static dm5Groups = [["少年向", "group1"], ["少女向", "group2"], ["青年向", "group3"]];
+    static dm5Status = [["连载中", "st1"], ["已完结", "st2"]];
+
     category = {
         title: "动漫屋",
         parts: [
@@ -716,28 +869,29 @@ class DM5 extends ComicSource {
                 name: "题材",
                 type: "fixed",
                 itemType: "category",
-                categories: [
-                    "全部", "热血", "恋爱", "校园", "冒险", "后宫", "科幻", "战争", "悬疑", "推理",
-                    "搞笑", "奇幻", "魔法", "神鬼", "历史", "同人", "运动", "绅士", "机甲"
-                ],
-                categoryParams: [
-                    "", "tag-rexue", "tag-aiqing", "tag-xiaoyuan", "tag-maoxian", "tag-hougong", "tag-kehuan", "tag-zhanzheng", "tag-xuanyi", "tag-zhentan",
-                    "tag-gaoxiao", "tag-qihuan", "tag-mofa", "tag-dongfangshengui", "tag-lishi", "tag-tongren", "tag-jingji", "tag-jiecao", "tag-jizhan"
-                ]
+                categories: ["全部"].concat(DM5.dm5Tags.map((e) => e[0])),
+                categoryParams: [""].concat(DM5.dm5Tags.map((e) => e[1]))
             },
             {
                 name: "地区",
                 type: "fixed",
                 itemType: "category",
-                categories: ["全部", "港台", "日韩", "大陆", "欧美"],
-                categoryParams: ["", "hktw", "jpkr", "china", "euus"]
+                categories: ["全部"].concat(DM5.dm5Areas.map((e) => e[0])),
+                categoryParams: [""].concat(DM5.dm5Areas.map((e) => e[1]))
             },
             {
                 name: "受众",
                 type: "fixed",
                 itemType: "category",
-                categories: ["全部", "少年向", "少女向", "青年向"],
-                categoryParams: ["", "shaonan", "shaonv", "qingnian"]
+                categories: ["全部"].concat(DM5.dm5Groups.map((e) => e[0])),
+                categoryParams: [""].concat(DM5.dm5Groups.map((e) => e[1]))
+            },
+            {
+                name: "状态",
+                type: "fixed",
+                itemType: "category",
+                categories: ["全部"].concat(DM5.dm5Status.map((e) => e[0])),
+                categoryParams: [""].concat(DM5.dm5Status.map((e) => e[1]))
             }
         ],
         enableRankingPage: false
@@ -745,20 +899,29 @@ class DM5 extends ComicSource {
 
     categoryComics = {
         load: async (category, param, options, page) => {
-            const tag = param || "";
-            const statusOpt = (options && options[0]) ? options[0].split("-")[0] : "";
-            const sortOpt = (options && options[1]) ? options[1].split("-")[0] : "";
-            const payOpt = (options && options[2]) ? options[2].split("-")[0] : "";
+            const pageNum = Number(page || 1) > 0 ? Number(page || 1) : 1;
 
-            // 构建路径，DM5 移动端 URL 规则通常是 manhua-list-tag-xxx-stx-sx-payx/
+            // optionList 的取值形如 "s10-人氣最旺" / "x-全部"，取 "-" 前面的值，"x" 表示不加该维度
+            const optValue = (i) => {
+                const raw = options && options[i] != null ? String(options[i]) : "";
+                const v = raw.split("-")[0].trim();
+                return v === "x" ? "" : v;
+            };
+
+            // param 形如 tag31 / area35 / group1 / st1（来自 category 各 part）。
+            // 只接受这个形态，避免旧版参数（tag-rexue / hktw …）拼出 404 路径。
+            const seg = String(param || "").trim().replace(/^-+/, "");
             let path = "manhua-list";
-            if (tag) path += "-" + tag;
-            if (statusOpt && statusOpt !== "st0") path += "-" + statusOpt;
+            if (/^(?:tag|area|group|st)\d+$/.test(seg)) {
+                path += "-" + seg;
+            }
+
+            const sortOpt = optValue(0);
             if (sortOpt && sortOpt !== "s10") path += "-" + sortOpt;
-            if (payOpt && payOpt !== "pay-1") path += "-" + payOpt;
+            const payOpt = optValue(1);
+            if (payOpt && /^pay\d+$/.test(payOpt)) path += "-" + payOpt;
             
             // 加上页码
-            const pageNum = Number(page || 1);
             if (pageNum > 1) {
                 path += "-p" + pageNum;
             }
@@ -799,9 +962,13 @@ class DM5 extends ComicSource {
                     if (!title && img) {
                         title = this.cleanText(img.attributes["alt"] || "");
                     }
+                    if (!title) {
+                        title = this.cleanText(a.attributes["title"] || "");
+                    }
                     if (!title) title = "漫画 " + id;
 
-                    const cover = this.getImageUrl(img);
+                    // 只接受真正的竖版封面
+                    const cover = this.pickCover(a);
                     seen.add(id);
 
                     comics.push({
@@ -826,9 +993,13 @@ class DM5 extends ComicSource {
                     if (!title && img) {
                         title = this.cleanText(img.attributes["alt"] || "");
                     }
+                    if (!title) {
+                        title = this.cleanText(a.attributes["title"] || "");
+                    }
                     if (!title) title = "漫画 " + id;
 
-                    const cover = this.getImageUrl(img);
+                    // 只接受真正的竖版封面
+                    const cover = this.pickCover(a);
                     seen.add(id);
 
                     comics.push({
@@ -841,29 +1012,21 @@ class DM5 extends ComicSource {
 
             return {
                 comics: comics,
-                maxPage: comics.length > 0 ? pageNum + 1 : pageNum
+
+                // 站点不公开总页数（移动页没有分页控件，PC 分页器也是窗口式只显示到第 10 页），
+                // 因此用页面自带的 pagesize 与「本页是否满页」判断是否还有下一页：
+                // 满页 => 可能还有；不满页或空 => 已到末页。
+                maxPage: (() => {
+                    const pageSize = Number((String(res.body).match(/var pagesize = "(\d+)"/) || [])[1]) || 0;
+                    return pageSize > 0 && comics.length >= pageSize ? pageNum + 1 : pageNum;
+                })()
             };
         },
 
         optionList: [
-            {
-                type: "select",
-                label: "状态",
-                options: ["st0-全部", "st1-连载", "st2-完结"],
-                default: "st0"
-            },
-            {
-                type: "select",
-                label: "排序",
-                options: ["s10-人气最旺", "s2-最近更新", "s18-最新上架"],
-                default: "s10"
-            },
-            {
-                type: "select",
-                label: "收费",
-                options: ["pay-1-全部", "pay0-免费", "pay1-付费", "pay2-VIP免费"],
-                default: "pay-1"
-            }
+            // 官方格式：每个选项用 "-" 分隔「值-显示文本」
+            { options: ["s10-人氣最旺", "s2-最近更新", "s18-最新上架"] },
+            { options: ["x-全部", "pay0-免費", "pay1-付費", "pay2-VIP免費"] }
         ]
     };
 
@@ -897,7 +1060,12 @@ class DM5 extends ComicSource {
 
             let title = "";
 
+            // 移动版详情页实测没有 h1 / .book-title / .comic-title，
+            // 真实标题在 .detail-main-info-title（另有一处 .normal-top-title）。
+            // 旧版只用 h1/.book-title/.comic-title，导致标题永远回退成「漫画 {slug}」。
             const titleElement =
+                document.querySelector(".detail-main-info-title") ||
+                document.querySelector(".normal-top-title") ||
                 document.querySelector("h1") ||
                 document.querySelector(".book-title") ||
                 document.querySelector(".comic-title");
@@ -916,7 +1084,12 @@ class DM5 extends ComicSource {
 
             let cover = "";
 
+            // 移动版详情页的真实封面是 .detail-main-cover 里的 img（180x240 竖版）；
+            // 同一张图也在 img.detail-main-bg 上。旧版的选择器都不匹配，
+            // 兜底逻辑又会命中 /chaptercover/ 这类无关图片。
             const coverSelectors = [
+                ".detail-main-cover img",
+                "img.detail-main-bg",
                 ".book-cover img",
                 ".comic-cover img",
                 ".cover img",
@@ -946,19 +1119,29 @@ class DM5 extends ComicSource {
             }
 
             if (!cover) {
-                // 兜底方案：尝试从页面所有图片中找一个可能是封面的
+                // 兜底方案：从页面所有图片里找一张真正的竖版封面。
+                // 注意不能只按 URL 里是否含 "cover"/"title" 判断：
+                // 页面里的 /chaptercover/xxx.jpg 含 "cover" 但那是无关的章节封面图。
                 const allImgs = document.querySelectorAll("img");
                 for (const img of allImgs) {
                     const src = this.getImageUrl(img);
-                    if (src && (src.includes("cover") || src.includes("title"))) {
+                    if (this.isRealCover(src, img.attributes["class"])) {
                         cover = src;
                         break;
                     }
                 }
             }
 
+            // 简介：移动版在 .detail-desc；旧版只读 meta[name='Description']（能用但不如页面正文准）
             let description = "";
 
+            const descEl = document.querySelector(".detail-desc");
+
+            if (descEl) {
+                description = this.cleanText(descEl.text);
+            }
+
+            if (!description) {
             const meta =
                 document.querySelector(
                     "meta[name='Description']"
@@ -969,13 +1152,39 @@ class DM5 extends ComicSource {
                     meta.attributes["content"] || ""
                 );
             }
+            }
+
+            // 作者 / 标签（移动版详情页）
+            const authors = [];
+
+            for (const a of document.querySelectorAll(".detail-main-info-author a")) {
+                const t = this.cleanText(a.text);
+
+                if (t && authors.indexOf(t) < 0) {
+                    authors.push(t);
+                }
+            }
+
+            const genreTags = [];
+
+            for (const a of document.querySelectorAll(".detail-main-info-class a")) {
+                const t = this.cleanText(a.text);
+
+                if (t && genreTags.indexOf(t) < 0) {
+                    genreTags.push(t);
+                }
+            }
 
             const chapters = new Map();
 
             const seen = new Set();
 
+            // 章节列表只在 .detail-list-select 里。
+            // 旧版扫全页的 /m{id}/ 链接，会把页面下方「相关推荐」里其它漫画的
+            // 「最新 第N话」当成本书章节（实测海贼王拿到 6 条全是《海贼王 艾斯》的章节）。
+            // 站点对「限制漫画」隐藏该容器（18+ 门禁），此时宁可为空也不返回错误章节。
             for (
-                const a of document.querySelectorAll("a")
+                const a of document.querySelectorAll(".detail-list-select a")
             ) {
                 let href =
                     a.attributes["href"] || "";
@@ -1020,6 +1229,12 @@ class DM5 extends ComicSource {
                         a.text
                     );
 
+                // .detail-list-select 的 <a> 文本里还带着更新日期（如「第1回 … 2021-08-23」），
+                // 去掉行尾的 YYYY-MM-DD 让章节标题干净
+                chapterTitle = chapterTitle
+                    .replace(/\s*\d{4}-\d{2}-\d{2}\s*$/, "")
+                    .trim();
+
                 if (!chapterTitle) {
                     chapterTitle =
                         String(
@@ -1049,7 +1264,19 @@ class DM5 extends ComicSource {
                     description
                 ),
 
-                tags: {},
+                tags: (() => {
+                    const t = {};
+
+                    if (authors.length > 0) {
+                        t["作者"] = authors;
+                    }
+
+                    if (genreTags.length > 0) {
+                        t["标签"] = genreTags;
+                    }
+
+                    return t;
+                })(),
 
                 chapters: chapters
             });
