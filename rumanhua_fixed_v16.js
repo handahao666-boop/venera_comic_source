@@ -1,7 +1,7 @@
 class RuManHua extends ComicSource {
     name = "如漫画"
     key = "rumanhua_fixed_v15"
-    version = "1.2.6"
+    version = "1.2.7"
     minAppVersion = "1.0.0"
     url = ""
 
@@ -162,7 +162,18 @@ class RuManHua extends ComicSource {
                 }
 
                 const chapters = new Map();
-                const chapterEls = doc.querySelectorAll('.chaplist-box ul li a') || doc.querySelectorAll('.view-ul li a');
+                // v1.2.7 修复「章节不更新 / 比原站少十几话」：
+                // 站点详情页的真实结构是 <div class="chapterList"><div class="chapterlistload"><ul>
+                //   <a href="/{id}/{chapterid}.html"><li>标题</li></a> …
+                // 注意 <a> 包着 <li>（不是 li 包 a），所以旧选择器 .chaplist-box ul li a / .view-ul li a
+                // 在站上一个都匹配不到；而 querySelectorAll 返回空数组是 truthy，|| 后面的分支也永远不会执行。
+                // 结果就是详情页上最新的那几十话（约 29 话）全部丢失，只剩 morechapter 接口返回的旧章节，
+                // 表现为「比原站少十几话、也不会自动更新新章节」。
+                let chapterEls = doc.querySelectorAll('.chapterlistload ul a');
+                if (chapterEls.length === 0) chapterEls = doc.querySelectorAll('.chapterlistload a');
+                if (chapterEls.length === 0) chapterEls = doc.querySelectorAll('.chaplist-box ul a');
+                if (chapterEls.length === 0) chapterEls = doc.querySelectorAll('.view-ul li a');
+                if (chapterEls.length === 0) chapterEls = doc.querySelectorAll('.chapterList a[href*=".html"]');
                 for (const el of chapterEls) {
                     const href = el.attributes.href;
                     const chapterTitle = el.text.trim();
@@ -171,7 +182,8 @@ class RuManHua extends ComicSource {
                     }
                 }
 
-                const moreBtn = doc.querySelector('.chaplist-box button') || doc.querySelector('.chaplist-more');
+                // 「更多话」按钮：本站是 .chaplist-more，另加 .chapterList 里的按钮兜底
+                const moreBtn = doc.querySelector('.chaplist-more') || doc.querySelector('.chaplist-box button') || doc.querySelector('.chapterList button');
                 if (moreBtn) {
                     try {
                         const moreRes = await Network.post(`http://www.rumanhua2.com/morechapter`, {

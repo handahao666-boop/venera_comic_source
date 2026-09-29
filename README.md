@@ -70,7 +70,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | mycomic.js | MYCOMIC | mycomic | v1.1.0 |
 | noymanga.js | NoyManga | noymanga | v1.1.3 |
 | rawkuma.js | Rawkuma | rawkuma | v1.1.0 |
-| rumanhua_fixed_v16.js | 如漫画 | rumanhua_fixed_v15 | v1.2.6 |
+| rumanhua_fixed_v16.js | 如漫画 | rumanhua_fixed_v15 | v1.2.7 |
 | sfacg_manhua.js | SF漫画 | sfacg_manhua | v1.0.0 |
 | shonen_jump_plus.js | 少年ジャンプ＋ | shonen_jump_plus | v1.1.1 |
 | tencent_comic_official.js | 腾讯动漫（正版） | qq_comic_official_v1 | v1.0.3 |
