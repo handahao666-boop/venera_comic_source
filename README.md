@@ -42,12 +42,12 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | --- | --- | --- | --- |
 | baihehui.js | 百合会 | baihehui | v1.0.0 |
 | baozi.js | 包子漫画 | baozi | v1.1.6 |
-| bilimanga.js | 嗶哩漫畫 | bilimanga | v1.1.3 |
+| bilimanga.js | 嗶哩漫畫 | bilimanga | v1.1.7 |
 | ccc.js | CCC追漫台 | ccc | v1.0.1 |
 | comick.js | comick | comick | v1.2.0 |
 | comic_walker.js | カドコミ | comic_walker | v1.0.1 |
 | copy_manga.js | 拷贝漫画 | copy_manga | v1.6.7 |
-| dm5.js | 动漫屋 | dm5 | v7.0.2 |
+| dm5.js | 动漫屋 | dm5 | v7.0.3 |
 | dongmanmanhua.js | 咚漫 | dongmanmanhua | v1.0.6 |
 | dongman_la_fixed_v101.js | 动漫啦 | dongman_la | v1.0.1 |
 | ffppt.js | 飞翔漫画 | ffppt | v1.0.1 |
@@ -68,7 +68,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | mh4399.js | 4399漫画网 | mh4399 | v1.0.3 |
 | mojoin_fixed_v107.js | MOJOIN | mojoin_v2 | v1.0.7 |
 | mycomic.js | MYCOMIC | mycomic | v1.1.0 |
-| noymanga.js | NoyManga | noymanga | v1.1.3 |
+| noymanga.js | NoyManga | noymanga | v1.1.5 |
 | rawkuma.js | Rawkuma | rawkuma | v1.1.0 |
 | rumanhua_fixed_v16.js | 如漫画 | rumanhua_fixed_v15 | v1.2.7 |
 | sfacg_manhua.js | SF漫画 | sfacg_manhua | v1.0.0 |
@@ -120,6 +120,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | 2026-09 | 修复 动漫屋 `dm5.js` v7.0.1（封面显示异常、详情页标题/封面/作者/标签解析失效、章节列表串到其它漫画）与 嗶哩漫畫 `bilimanga.js` v1.1.1（搜索走站点真实的 guard + POST 协议） |
 | 2026-09 | 动漫屋升级 v7.0.2：重建分类参数（旧版 tag-rexue/hktw 等实测 404），新增状态维度与排序/付费筛选；嗶哩漫畫升级 v1.1.2：修复含全角符号的完整书名搜不到（改为优先用中文片段检索），并补上站点限流的等待重试 |
 | 2026-09 | 嗶哩漫畫升级 v1.1.3：修复「搜具体书名搜不到」的主因——站点在搜索结果唯一时会 302 跳转到详情页，源现在会从详情页还原这一条 |
+| 2026-10 | 嗶哩漫畫升级 v1.1.4：图片加载改用章节页 Referer 并补上 `onLoadFailed` 重试（站点图片 CDN 强制校验 Referer，且 Venera 在源未提供重试回调时不会自动重试，会把拦截页写进图片缓存导致一直报 Could not decompress image） |
 
 ## 关于本项目
 

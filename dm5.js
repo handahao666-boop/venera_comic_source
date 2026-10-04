@@ -1,5 +1,10 @@
 // 动漫屋 (m.dm5.com / www.dm5.com) Venera 漫画源
-// 版本: 7.0.2
+// 版本: 7.0.3
+// v7.0.3 修复：部分漫画「下一章」跳成上一章。站点详情页章节列表顺序**因漫画而异**，
+//   实测抽样 30 部里有 5 部是倒序（最新话在前），而 Venera 的「下一章」= 列表下标 +1，
+//   于是倒序漫画点下一章会回到上一话。现仅在检测到主序列倒序时才重排
+//   （主序列按卷号+话号升序，番外/公告等保持在最后），正序漫画原样不动。
+//   详见 dm5_bilimanga_development_log.md 第七节。
 // v7.0.2 修复：分类点进去 404。旧版 categoryParams 用的是 tag-rexue / hktw / jpkr / china / euus，
 //   拼出的 /manhua-list-tag-rexue/ 这类路径在站点上根本不存在（实测 404）。站点真实规则是
 //   /manhua-list[-tag{n}|-area{n}][-group{n}][-st{n}][-s{n}][-pay{n}][-p{n}]/，已按真网取证的
@@ -21,7 +26,7 @@ class DM5 extends ComicSource {
 
     key = "dm5";
 
-    version = "7.0.2";
+    version = "7.0.3";
 
     minAppVersion = "1.6.0";
 
@@ -357,6 +362,129 @@ class DM5 extends ComicSource {
         }
 
         return this.baseUrl + "/" + id;
+    }
+
+    // ==================================================
+    // 章节顺序归一化（v7.0.3）
+    // ==================================================
+    // 真网实测（2026-10-02）：动漫屋详情页的章节列表顺序**因漫画而异**。
+    // 抽样 30 部：25 部是正序（第1话在前），5 部是倒序（最新话在前）：
+    //   manhua-luonalita / manhua-shining / manhua-xiabeiziwozaihaohaoguo /
+    //   manhua-kaishichengweishijiezuiqiangdemonv--… / manhua-beizhuifangdezhuansheng…
+    // 而 Venera 的「下一章」是按章节在列表里的下标 +1 走的
+    // （lib/pages/reader/reader.dart: toNextChapter() -> toChapter(chapter + 1)），
+    // 所以倒序列表会让「下一章」跳到上一话（用户实测：看第2话点下一章跳到第1话）。
+    //
+    // 处理策略：**只有检测到主序列确实是倒序时才重排**；正序列表原样返回（零风险）。
+    // 重排规则：主序列（话/回/集/章）按卷号+话号升序，其余条目（番外/公告/杂图等）
+    // 保持站点原有相对顺序接在最后 —— 这也正是正序漫画的既有排版。
+    parseChapterKey(title) {
+        const text = String(title == null ? "" : title);
+
+        const chapterMatch = text.match(
+            /第\s*(\d+(?:\.\d+)?)\s*(?:话|話|回|集|章|節|节)/
+        );
+
+        const volumeMatch =
+            text.match(/第\s*(\d+(?:\.\d+)?)\s*(?:卷|冊|册)/) ||
+            text.match(/^\s*(\d+(?:\.\d+)?)\s*(?:卷|冊|册)/);
+
+        if (chapterMatch) {
+            return {
+                series: "chapter",
+                volume: volumeMatch ? parseFloat(volumeMatch[1]) : 0,
+                number: parseFloat(chapterMatch[1])
+            };
+        }
+
+        if (volumeMatch) {
+            return {
+                series: "volume",
+                volume: 0,
+                number: parseFloat(volumeMatch[1])
+            };
+        }
+
+        return null;
+    }
+
+    normalizeChapterOrder(chapters) {
+        const items = [];
+
+        let position = 0;
+
+        for (const entry of chapters.entries()) {
+            items.push({
+                id: entry[0],
+                title: entry[1],
+                position: position++,
+                key: this.parseChapterKey(entry[1])
+            });
+        }
+
+        // 按序列类型分组，取条目最多的那一组当主序列
+        const groups = {};
+
+        for (const item of items) {
+            if (!item.key) continue;
+            if (!groups[item.key.series]) groups[item.key.series] = [];
+            groups[item.key.series].push(item);
+        }
+
+        let mainSeries = null;
+
+        for (const name of Object.keys(groups)) {
+            if (
+                !mainSeries ||
+                groups[name].length > groups[mainSeries].length
+            ) {
+                mainSeries = name;
+            }
+        }
+
+        // 样本太少就不动，避免误判
+        if (!mainSeries || groups[mainSeries].length < 3) {
+            return chapters;
+        }
+
+        const mainItems = groups[mainSeries];
+
+        const first = mainItems[0].key;
+
+        const last = mainItems[mainItems.length - 1].key;
+
+        const descending =
+            first.volume > last.volume ||
+            (first.volume === last.volume && first.number > last.number);
+
+        // 已经是正序 —— 原样返回
+        if (!descending) {
+            return chapters;
+        }
+
+        const sorted = mainItems.slice().sort((a, b) => {
+            if (a.key.volume !== b.key.volume) {
+                return a.key.volume - b.key.volume;
+            }
+            if (a.key.number !== b.key.number) {
+                return a.key.number - b.key.number;
+            }
+            return a.position - b.position;
+        });
+
+        const ordered = new Map();
+
+        for (const item of sorted) {
+            ordered.set(item.id, item.title);
+        }
+
+        // 非主序列条目（番外、公告、杂图……）按站点原顺序接在后面
+        for (const item of items) {
+            if (item.key && item.key.series === mainSeries) continue;
+            ordered.set(item.id, item.title);
+        }
+
+        return ordered;
     }
 
     // ==================================================
@@ -1278,7 +1406,7 @@ class DM5 extends ComicSource {
                     return t;
                 })(),
 
-                chapters: chapters
+                chapters: this.normalizeChapterOrder(chapters)
             });
         },
 

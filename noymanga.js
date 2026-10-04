@@ -1,7 +1,11 @@
+// NoyManga（NoyAcg）Venera 漫画源
+// v1.1.5 新增「内容类型」设置（全年龄 / 含成人 / 仅成人），默认仅全年龄，
+//   实现方式是给所有 /api/* 请求加站点自己的 allow-adult 请求头。
+// v1.1.4 改为账号密码直接登录（POST /api/login），弃用无法工作的网页登录。
 class Noymanga extends ComicSource {
   name = "NoyManga";
   key = "noymanga";
-  version = "1.1.3";
+  version = "1.1.5";
   minAppVersion = "1.6.0";
   url = "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/noymanga.js";
 
@@ -20,6 +24,30 @@ class Noymanga extends ComicSource {
   signInReadOnlyDepth = 0;
   signInSuppressionBeforeReadOnly = false;
 
+  // 内容类型（全年龄 / 成人）——对应站点「設定 → 內容類型」
+  //
+  // 真网取证（2026-10-04）：站点前端把该设置作为**请求头 `allow-adult`**
+  // 附加到所有 /api/* 请求上：
+  //   assets/client-NJP-QThl.js:
+  //     $.interceptors.request.use(e => (e.headers.set('allow-adult', r().allowAdult), e))
+  //   assets/app-settings-CO9umcLh.js:
+  //     localStorage['app:settings'] = { allowAdult: 'false' }  ← 站点默认值
+  //   assets/settings-BYJiaBjU.js（设置页下拉框）:
+  //     false => 僅全年齡內容    true => 僅成人內容    both => 顯示所有內容
+  //
+  // 所以源里只要跟着改这个头即可，三个取值与站点完全一致；
+  // 用户要的「全年龄 / 成人」分别对应 false / both（both 才能在全年龄之外再看到成人内容）。
+  allowAdultValue() {
+    let value = "";
+    try {
+      value = String(this.loadSetting("content_type") || "").trim().toLowerCase();
+    } catch (error) {
+      value = "";
+    }
+    if (value !== "false" && value !== "both" && value !== "true") return "false";
+    return value;
+  }
+
   apiHeaders(contentType) {
     const headers = {
       "Accept": "application/json, text/plain, */*",
@@ -27,6 +55,7 @@ class Noymanga extends ComicSource {
       "Origin": this.baseUrl,
       "User-Agent": this.userAgent,
       "Referer": this.baseUrl + "/",
+      "allow-adult": this.allowAdultValue(),
     };
     if (contentType) headers["Content-Type"] = contentType;
     return headers;
@@ -500,6 +529,16 @@ class Noymanga extends ComicSource {
   }
 
   settings = {
+    content_type: {
+      title: "内容类型",
+      type: "select",
+      default: "false",
+      options: [
+        { value: "false", text: "仅全年龄内容（默认）" },
+        { value: "both", text: "显示所有内容（含成人）" },
+        { value: "true", text: "仅成人内容" },
+      ],
+    },
     account_status: {
       title: "账号",
       type: "callback",
@@ -590,30 +629,74 @@ class Noymanga extends ComicSource {
     }
   }
 
+  // v1.1.4：改成**账号密码直接登录**，弃用「网页登录」。
+  //
+  // 为什么网页登录在这站一定失败（真网取证）：
+  //   noymanga.com 是 React SPA（Vite 构建，前端路由 react-router）。
+  //   Venera 的网页登录只会在这两种事件里回调 checkStatus：
+  //     - onNavigation（Android 的 shouldOverrideUrlLoading）
+  //     - onTitleChange（document.title 变化）
+  //   （见 lib/pages/comic_source_page.dart loginWithWebview() 与 lib/pages/webview.dart）
+  //   而本站：① 登录成功后是 `navigate('/', {replace:true})` 的前端路由跳转，
+  //   Android WebView 不会触发 shouldOverrideUrlLoading（只走 doUpdateVisitedHistory，
+  //   而 Venera 根本没监听它）；② 全站 84 个前端资源里**没有任何一处修改 document.title**，
+  //   title 恒为「NoyAcg - 漫畫&同人誌社區」。所以登录完 Venera 收不到任何事件，
+  //   checkStatus 永远不会被再次调用 —— 这不是判断条件写得严不严的问题，是压根没回调。
+  //
+  // 好消息：站点自己的登录接口是开放的普通表单接口（前端 `axios.post('/login', {user, pass})`）：
+  //   POST https://noymanga.com/api/login   body: user=<账号>&pass=<密码>
+  //   实测假账号 -> 200 {"status":"error"}（接口存在、直接校验账号密码、登录不需要验证码）
+  // 成功时状态为 ok 之外的值不存在，且服务端会下发会话 Cookie（Venera 自动接管），
+  // 于是直接用它做登录，稳定且无需 WebView。
+  async loginWithPassword(username, password) {
+    const user = String(username == null ? "" : username).trim();
+    const pass = String(password == null ? "" : password);
+    if (!user || !pass) throw "請填寫帳號（用戶名或電郵）與密碼";
+
+    const response = await Network.post(
+      this.apiBaseUrl + "/api/login",
+      Object.assign({}, this.apiHeaders("application/x-www-form-urlencoded"), {
+        "Referer": this.baseUrl + "/login",
+      }),
+      this.formEncode([["user", user], ["pass", pass]]),
+    );
+
+    if (response.status < 200 || response.status >= 400) {
+      throw "登入請求失敗（HTTP " + response.status + "）";
+    }
+
+    let payload = null;
+    try {
+      payload = JSON.parse(String(response.body || ""));
+    } catch (error) {
+      payload = null;
+    }
+    if (!payload || typeof payload !== "object") throw "登入回應無法解析";
+
+    const status = String(payload.status == null ? "" : payload.status).trim().toLowerCase();
+    if (status === "error") throw "帳號或密碼錯誤";
+    if (status === "danger") throw "帳號或密碼包含不允許的字元";
+    if (status && status !== "ok") {
+      throw "登入失敗：" + String(payload.msg || payload.message || status);
+    }
+
+    // 二次确认：用 userinfo 验证 Cookie 真的生效，避免“接口回了 ok 但会话没建立”
+    this.signInGeneration += 1;
+    this.clearLocalData(this.signInCacheKey);
+    this.autoSignInAttemptDate = "";
+    const info = await this.assertLoggedIn();
+    return this.accountLabel(info);
+  }
+
   account = {
-    loginWithWebview: {
-      url: "https://noymanga.com/login",
-      checkStatus: (url, title) => {
-        if (!/Noy(?:Acg|Manga)/i.test(String(title || "").trim())) return false;
-        const value = String(url || "").trim().split("#")[0].split("?")[0].replace(/\/+$/, "");
-        const match = value.match(/^https:\/\/noymanga\.com(?::443)?(\/.*)?$/i);
-        const path = match ? (match[1] || "/") : "";
-        return path === "/" || path === "/user" || path === "/favorite";
-      },
-      onLoginSuccess: () => {
-        this.signInGeneration += 1;
-        this.clearLocalData(this.accountCacheKey);
-        this.clearLocalData(this.signInCacheKey);
-        this.autoSignInAttemptDate = "";
-        UI.showMessage("登录完成，Cookie 已自动接管；无需提取任何令牌。可回到源设置检查账号或运行连接测试。");
-      },
-    },
+    // Venera 的约定：抛异常 = 登录失败（异常文案会直接显示），正常返回 = 成功
+    login: (username, password) => this.loginWithPassword(username, password),
     logout: () => {
       this.clearAccountState();
       this.clearLocalData("_localStorage");
       Network.deleteCookies(this.baseUrl);
     },
-    registerWebsite: null,
+    registerWebsite: "https://noymanga.com/register",
   };
 
   search = {

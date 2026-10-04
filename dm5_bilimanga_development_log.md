@@ -282,13 +282,291 @@ m.dm5.com 的同一个 `<a>` 里会混入用途完全不同的图片，实测分
 
 ---
 
-## 五、交付物
+## 五、嗶哩漫畫阅读时「Could not decompress image」修复（v1.1.4）
+
+### 5.1 现象
+
+客户端阅读章节时每页都显示 `Exception: Could not decompress image.`（截图：怪奇物語 第1話，1/58）。
+
+### 5.2 取证
+
+1. **图片 CDN 强制校验 Referer**（实测 i.motiezw.com 的单张图）：
+
+   | 请求头 | 结果 |
+   |---|---|
+   | UA + Referer(`https://www.bilimanga.net/`) + Accept | **200 image/avif**（457546 字节，magic `ftypavif`） |
+   | 只带 UA（无 Referer） | **403**，返回 5853 字节的 Cloudflare 拦截页 HTML |
+   | UA + Accept（无 Referer） | **403**，5486 字节拦截页 HTML |
+
+   也就是说：**只要 Referer 缺失，拿到的就是一段 HTML**，客户端去解码自然报 `Could not decompress image`。
+
+2. **图片本身没有加密、也没有别的格式可选**：换 `.jpg/.webp/.png` 全部 404，
+   `?x-oss-process`、`?format=jpg` 等参数被忽略（仍返回同一份 AVIF），
+   `/cdn-cgi/image/...` 未启用。镜像站 bilicomic.net 会 302 回 bilimanga.net，图片同样只有 AVIF。
+
+3. **Venera 的图片下载逻辑**（`lib/network/images.dart`）：
+   - **不校验返回内容**，下载到的字节直接 `CacheManager().writeCache(...)` ——
+     一旦某次拿到拦截页 HTML 并被写进缓存，之后每次打开都会读到那段 HTML，报同样的解码错误，
+     重新进章节也没用；
+   - 失败时**只有源提供了 `onLoadFailed` 才重试**（最多 5 次），否则一次都不重试。
+
+### 5.3 修复
+
+* `onImageLoad` 的 Referer 从首页改成**当前章节页** `{baseUrl}/read/{comicId}/{epId}.html`
+  （更贴近浏览器真实行为）。
+* 补上 `onLoadFailed` 回调，被拦截时原样重试（Venera 最多重试 5 次）。
+* `onResponse` 增加**文件头校验**（v1.1.5）：AVIF(`ftyp`)/JPEG/PNG/WebP/GIF 之外的响应（尤其首字节是 `<`
+  的 HTML 拦截页）直接抛错。这样 Venera 会走 `onLoadFailed` 重试，而**不会把拦截页写进图片缓存**，
+  从根本上避免「缓存被污染后一直报解码错误、重开也没用」。
+* 版本升至 **v1.1.5**（v1.1.4 先加 Referer + onLoadFailed，v1.1.5 再加响应校验）。
+
+校验逻辑已用单元用例验证：AVIF/JPEG/PNG/WebP/GIF 头部全部通过，Cloudflare 拦截页 HTML 正确抛错。
+
+### 5.4 用户需要做的一步
+
+因为 Venera 会把下载到的字节直接写进图片缓存，**如果之前已经缓存过 Cloudflare 的拦截页，
+必须先在应用里清一次图片缓存**（再重新打开章节），否则源改对了也还是读到旧的 HTML。
+
+### 5.5 未完成验证
+
+修复过程中对该站的探测过于密集（数十次请求），**IP 被站点 Cloudflare 整域限流**，
+后续连详情页/阅读页都返回 403，因此本版**没能完成端到端真机回归**。
+待 IP 解封或用户实机确认后，需要补充：
+
+- 带章节页 Referer 的图片请求能否稳定 200；
+- 清缓存后章节图片能否正常显示；
+- 若仍报解码错误，需用 Venera 导出的 log.txt 确认是「图片请求 403」还是「AVIF 解码失败」，
+  后者属于 Venera 已知问题（issue #798：高分辨率 AVIF 有概率解码失败）。
+
+---
+
+## 五之二、v1.1.6：修正第五章的误判 + 定位「手机端不能用、电脑端能用」
+
+### 5.6.1 修正：图片 CDN **不是**强制校验 Referer
+
+2026-10-02 复测（IP 已解封）推翻了第五章的结论。同一张图、
+请求头只差一项时结果如下（每张图单独重放，间隔 ≥5 秒）：
+
+| 请求头 | 结果 |
+|---|---|
+| UA + Referer + Accept + **Accept-Language** | 200 image/avif |
+| UA + Accept + **Accept-Language**（无 Referer） | 200 image/avif |
+| UA + Referer + Accept（**缺 Accept-Language**） | **403**，5486 字节 CF 拦截页 |
+
+规律是 100% 一致的：**决定成败的是 `Accept-Language`，不是 Referer**。
+只要缺这一个头，Cloudflare WAF 就当机器人拦掉；带上它（其余随便）就放行。
+第五章之所以误判，是因为当时每次都同时丢了 Referer 和 Accept-Language。
+
+### 5.6.2 真相：手机端/电脑端差异来自 **AVIF 解码能力**，不是源的问题
+
+真网取证结论（2026-10-02，全部实测）：
+
+1. 阅读页图片**只有 AVIF 一种格式**，没有任何备用图源：
+   - 换 `.jpg` / `.webp` / `.png` / 无后缀 → 全 404；
+   - 七牛 `?imageView2/2/w/800/format/webp`、又拍 `!/fw/800/format/webp`、
+     阿里 `?x-oss-process=image/resize,w_800/format,webp`、腾讯 `?imageMogr2/thumbnail/800x/format,webp`
+     → 参数被忽略，返回的还是同一份 457546 字节的 AVIF；
+   - `img/i1/cdn/pic.motiezw.com` 这些子域不存在（NXDOMAIN）；
+   - 用老 Android UA（Chrome 50）或桌面 UA 抓阅读页，图片地址依然是 `.avif`；
+   - 站点自己那段 `checkAVIFSupport()` 检测到不支持 AVIF 时**只弹一句提示**，不换图；
+   - 桌面版阅读页直接拒绝服务（「章節不支持桌面電腦端瀏覽器顯示」），没有第二套图。
+2. 抽检两张图的实际结构：`1445x2048`、8 位、`ftyp avif/mif1/miaf/MA1B` 与 `…/MA1A`
+   —— 同一章里混着 **4:2:0(MA1B)** 和 **4:4:4 profile 1(MA1A)**，这正好解释了
+   「有的页面能显示、有的页面报重试」。
+3. Venera 官方 issue 已有同款报告：
+   - [#709](https://github.com/venera-app/venera/issues/709)（Android，1.6.1，部分图无法解压，被判定为漫画源无关）；
+   - [#798](https://github.com/venera-app/venera/issues/798)（Android，「极小部分 .avif 打不开」，
+     报错原文 **could not compress image**，与本站现象一字不差；报告者补充**系统相册也打不开**，
+     判断是 Android 自身 AVIF 支持不完整，需应用内自行调 libavif）。
+
+于是「手机端全挂、电脑端正常」的原因就清楚了：电脑端能解 AVIF，手机端（或系统解码器）解不了，
+**这一段不在源能控制的范围里**。
+
+### 5.6.3 v1.1.6 实际做的加固
+
+虽然解不了 AVIF 属于客户端能力问题，但源仍把「能修的」都修了：
+
+1. **修正 UA 自相矛盾**：旧版写 `Android 10; Pixel 5`（Pixel 5 出厂即 Android 11），
+   这种不自洽的 UA 本身就会被 WAF 盯上；统一改成自洽的 Chrome 131 / Android 14，并把
+   Client Hints 对齐（`sec-ch-ua` 同步到 131）。
+2. **图片请求头做成 4 档轮换重试**（`imageHeaderProfiles()`）：
+   ① 完整移动端浏览器（含 Client Hints + `Sec-Fetch-*`）
+   ② 精简版（只留 UA/Accept/Accept-Language/Referer）
+   ③ iOS Safari 指紋
+   ④ 不带 Referer
+   每一档都**必带 `Accept-Language`**，绕开实测到的 WAF 规则。
+3. **修好「只会重试一次」的坑**：Venera 的 `_loadComicImage` 只有在新配置里**再次带上
+   `onLoadFailed`** 才会继续重试，旧版返回的新配置没带，所以实际上只能重试 1 次。
+   现在每档都返回全新的 `onLoadFailed`/`onResponse`（也避免 Dart 侧 `free()` 复用同一个回调）。
+4. **保留并抽出文件头校验**（`BiliManga.validateImageBytes`）：HTML 拦截页、非图片响应直接抛错，
+   不会把 CFR 拦截页写进图片缓存，避免「重开章节也一直报 Could not decompress image」。
+5. **新增可选的转码代理接入点**：文件头部 `IMG_PROXY_TEMPLATE`（默认空 = 直连）。
+   如果你有一台能「AVIF→JPEG/WebP」的代理（自建 Cloudflare Worker / wsrv 之类），
+   填 `"https://你的代理/?url={url}"` 就能让解不了 AVIF 的手机也正常显示。
+
+### 5.6.4 v1.1.6 验证结果（真网）
+
+- `node verify_bilimanga_v116.js`：26/26 通过（请求头档位、重试链、文件头校验、封面）。
+- `node verify_bilimanga_v116_live.js`：10/10 通过 —— **用源本身的代码**跑真网：
+  详情页解析、阅读页解析到 26 张图、第 1 档下载 200（457546B AVIF）、文件头校验通过、
+  第 2/4 档重试链 200、以及反向确认「缺 Accept-Language 会 403」。
+- `node verify_dm5_bilimanga.js`：改写版本断言为 1.1.6 后，搜索/详情/分类等原有链路全绿。
+
+### 5.6.5 手机端仍然打不开怎么办
+
+先做 1 分钟判断：**用手机自带浏览器打开任意章节页**
+（例如 `https://www.bilimanga.net/read/1601/132012.html`）。
+
+- 浏览器能正常显示漫画 → 网络没问题，是 Venera/Flutter 端的 AVIF 解码问题（源无法修），
+  解决办法只有两条：换一台支持 AVIF 的设备，或给源配上 5.6.3-5 的转码代理。
+- 浏览器也提示「你的瀏覽器不支持avif格式圖片」→ 设备本身不支持 AVIF，同上。
+- 浏览器能开、Venera 里报的是 `Invalid Status Code: 403`（而不是 Could not decompress image）
+  → 那才是风控问题，请带着这句报错反馈，本版的多档重试就是冲它去的。
+
+---
+
+## 五之三、v1.1.7：找到真正的元凶之一 —— 阅读器**优先吃缓存里的坏字节**
+
+### 5.7.1 用户实机反馈修正了判断
+
+用户在手机上做了对照实验：
+
+- **系统自带浏览器**打开章节页 → 显示"抱歉，章節不支持桌面電腦端瀏覽器顯示"（站点把系统浏览器判成了桌面端）；
+- **Edge 浏览器**打开同一页 → 漫画正常显示。
+
+这条信息排除了两件事：
+
+1. **网络没问题**：手机能正常拉到 `i.motiezw.com` 的图片；
+2. **手机能解 AVIF**：Edge（Chromium 自带 libavif）能正常解码这些图。
+
+再加上用户之前描述的现象——「**有的漫画的部分页面会跳重试**」——
+说明在那台手机的 Venera 里，**部分 AVIF 页面是能正常显示的**。
+所以"Android 解不了 AVIF"只能是**极小部分图**的偶发情况，**不是**"整章全挂"的解释。
+真正的元凶在 Venera 的图片读取顺序里。
+
+### 5.7.2 元凶：拿到第一个 imageBytes 就 break
+
+翻开 Venera 源码（v1.6.3）：
+
+`lib/network/images.dart` 的 `_loadComicImage()`：
+
+```dart
+final cache = await CacheManager().findCache(cacheKey);
+if (cache != null) {
+  var data = await cache.readAsBytes();
+  yield ImageDownloadProgress(..., imageBytes: data);   // ① 先把缓存字节吐出去
+}
+...  // ② 之后才去发网络请求
+```
+
+`lib/foundation/image_provider/reader_image.dart` 的 `load()`：
+
+```dart
+await for (var event in ImageDownloader.loadComicImage(...)) {
+  ...
+  if (event.imageBytes != null) { imageBytes = event.imageBytes; break; }  // ③ 收到第一个就 break
+}
+```
+
+三点合起来就是：**只要缓存里是 Cloudflare 的 403 拦截页 HTML，
+这次网络重新下载到的正确图片根本不会被采用**（③ 已经 break 掉了），
+于是永远报 `Exception: Could not decompress image.`，点重试、重开章节、换网络都没用。
+
+更糟的是两条：
+
+- `findCache()` 每次命中都会把过期时间**续 7 天**，坏条目永远不会自己过期；
+- 解码失败时代码想删缓存（`base_image_provider.dart` 里的 `CacheManager().delete(this.key)`），
+  但 provider 的 key 是 `url@source@cid@eid@enableResize`，
+  而写缓存用的 key 是 `url@source@cid@eid`（**少了 `@enableResize`**）——key 对不上，**删不掉**。
+
+这完美解释了「手机端一直不行、电脑端正常」：手机端历史上被 Cloudflare 拦过一次、
+缓存被污染；电脑端没被拦过、缓存干净。也解释了「有的漫画只有封面能出来」
+（封面是 JPG，且走的是另一套 thumbnail 缓存 key，不受污染影响）。
+
+### 5.7.3 修复：给图片地址加缓存版本号
+
+Venera 的图片缓存 key **就是图片 URL**，所以只要换掉 URL 就等于换 cache key，
+老用户不用手动清缓存也能自愈。`loadEp` 现在给每张图统一加上 `?v=117`：
+
+```js
+const CACHE_BUST = "v=117";
+busted.push(src + (src.indexOf("?") === -1 ? "?" : "&") + CACHE_BUST);
+```
+
+真网已验证：带 `?v=117` 仍然 `200 image/avif`、457546 字节、同一份图片（CDN 忽略该参数）。
+以后若再需要一次"全网换 key"，把 `v=117` 改成 `v=118` 即可。
+
+用户侧如果想立刻生效，也可以手动清一次：**Venera → 设置 → 通用（App）→ 清除缓存**
+（源码 `lib/pages/settings/app.dart` 的 "Clear Cache"）。
+
+### 5.7.4 v1.1.7 验证
+
+- `node verify_bilimanga_v116.js`：26/26 通过（档位、重试链、文件头校验、封面）。
+- `node verify_bilimanga_v116_live.js`：11/11 通过（含"图片地址带缓存版本号"与带参数的真实下载 200）。
+- 真网抽测 `?v=117` / `?v=117&_=1`：均 200，字节数与无参数一致。
+
+---
+
+## 六、动漫屋 dm5.js：部分漫画「下一章」跳成上一章（v7.0.3）
+
+### 6.1 现象
+
+用户实机反馈：看第 2 话点「下一章」，出现的却是第 1 话（方向反了）。
+
+### 6.2 根因（真网取证）
+
+Venera 的「下一章」是按**章节在列表里的下标 +1** 走的：
+
+```dart
+// lib/pages/reader/reader.dart
+bool toNextChapter() => toChapter(chapter + 1);   // chapter 是 1-based 下标
+String get eid => widget.chapters?.ids.elementAtOrNull(chapter - 1) ?? '0';
+```
+
+所以只要源返回的章节 Map 是**倒序**（最新话在前），「下一章」就会走到上一话。
+
+抽样 30 部动漫屋漫画的详情页 `.detail-list-select`，结果 **22 部正序、5 部倒序、3 部空（18+ 门禁）**：
+
+| 漫画 | 站点顺序 | 首条 |
+|---|---|---|
+| manhua-luonalita | 倒序 | 第10话 |
+| manhua-shining | 倒序 | 第35话 |
+| manhua-xiabeiziwozaihaohaoguo | 倒序 | 第22话 |
+| manhua-kaishichengweishijiezuiqiangdemonv--… | 倒序 | 第74话 |
+| manhua-beizhuifangdezhuansheng… | 倒序 | 第180话 |
+| manhua-yuanzun 等 22 部 | 正序 | 第1回 |
+
+也就是说：站点的章节顺序**因漫画而异**，源不能假定只有一种。
+
+### 6.3 修复（只对倒序漫画动手）
+
+`loadInfo` 里新增 `parseChapterKey()` + `normalizeChapterOrder()`：
+
+1. 从章节标题解析「卷号 / 话号」（`第N话|話|回|集|章` 优先，其次 `第N卷` / `N卷`）；
+2. 按序列类型分组，取条目最多的那一组当**主序列**；
+3. **只有主序列首尾比较确实是倒序时才重排**：主序列按卷号+话号升序，
+   其余条目（番外、外传、公告、杂图……）保持站点原有相对顺序接在最后；
+4. 正序漫画**原样返回**（零风险，不动任何条目）。
+
+### 6.4 回归结果（真网）
+
+`node verify_dm5_noy_v2.js`：
+
+- manhua-luonalita：11 章 → 首「第1话」、尾「杂图」，与前 3 条 1/2/3 话升序 ✓
+- manhua-shining：42 章 → 首「第1话」、番外类仍在末尾 ✓
+- manhua-yuanzun：1315 章，**与站点 DOM 顺序逐条一致**（未做任何改动）✓
+
+---
+
+## 七、交付物
 
 | 文件 | 说明 |
 |---|---|
-| `venera-configs-auto/dm5.js` | v7.0.1 修复版 |
-| `venera-configs-auto/bilimanga.js` | v1.1.1 修复版 |
+| `venera-configs-auto/dm5.js` | v7.0.3 修复版（章节顺序归一化） |
+| `venera-configs-auto/bilimanga.js` | v1.1.7 修复版 |
 | `verify_dm5_bilimanga.js` | 两源合并真网回归脚本 |
+| `verify_bilimanga_v116.js` / `verify_bilimanga_v116_live.js` | v1.1.6 图片链路单元 + 真网端到端验证 |
+| `verify_dm5_noy_v2.js` | dm5 章节顺序 + noymanga 登录真网回归 |
 | 本文件 | 修复日志 |
 
 复现命令：`node verify_dm5_bilimanga.js`
