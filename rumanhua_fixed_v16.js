@@ -1,7 +1,7 @@
 class RuManHua extends ComicSource {
     name = "如漫画"
     key = "rumanhua_fixed_v15"
-    version = "1.2.7"
+    version = "1.2.8"
     minAppVersion = "1.0.0"
     url = ""
 
@@ -18,6 +18,138 @@ class RuManHua extends ComicSource {
 
     toFormData(obj) {
         return Object.keys(obj).map(key => encodeURIComponent(key) + '=' + encodeURIComponent(obj[key])).join('&');
+    }
+
+    // ==================================================
+    // 章节顺序归一化（v1.2.8）
+    // ==================================================
+    // 真网实测（2026-10-04）：如漫画的章节列表**本身就是倒序**（最新话在前），
+    // 详情页 `.chapterlistload ul a` 28 条 + morechapter 接口 607 条，全部是降序：
+    //   详情页：第2季162话 → 161话 → 160话 → …（第2季141话）
+    //   morechapter：第2季140话 → … → 第1话
+    // 而 Venera 的「下一章」= 章节在列表里的下标 +1
+    // （lib/pages/reader/reader.dart: toNextChapter() -> toChapter(chapter + 1)），
+    // 所以倒序列表会让「下一章」跳到上一话 —— 与动漫屋 dm5 v7.0.3 是同一个病。
+    //
+    // 处理策略与 dm5 保持一致：**只在检测到主序列确实是倒序时才重排**，
+    // 主序列按「季/卷号 + 话号」升序，其余条目（番外、公告、活动等）保持
+    // 站点原有相对顺序接在最后。
+    parseChapterKey(title) {
+        const text = String(title == null ? "" : title);
+
+        // 本站标题写法很乱，实测同一部作品（斗破苍穹 681 条）里同时存在四种：
+        //   「第131回 卑鄙的联手 下」 / 「386回 盟主的责任」 / 「130 下」 / 「321 大补方」
+        // 所以：①「第」做成可选；②补一条"纯数字开头"的规则，否则老章节会被当成
+        // 番外/公告排到末尾。
+        const chapterMatch = text.match(
+            /(?:第\s*)?(\d+(?:\.\d+)?)\s*(?:话|話|回|集|章|節|节)/
+        );
+
+        const volumeMatch = text.match(/第\s*(\d+(?:\.\d+)?)\s*(?:季|卷|冊|册)/);
+
+        if (chapterMatch) {
+            return {
+                series: "chapter",
+                volume: volumeMatch ? parseFloat(volumeMatch[1]) : 0,
+                number: parseFloat(chapterMatch[1])
+            };
+        }
+
+        // 纯数字开头（数字后面必须是空格/括号/结尾，避免把「3月15日延更公告」
+        // 这类当章节；「118（上)」这种括号写法确实存在，所以括号也放行）
+        const bareMatch = text.match(/^\s*(\d+(?:\.\d+)?)(?=[\s（(]|$)/);
+
+        if (bareMatch) {
+            return {
+                series: "chapter",
+                volume: 0,
+                number: parseFloat(bareMatch[1])
+            };
+        }
+
+        if (volumeMatch) {
+            return {
+                series: "volume",
+                volume: 0,
+                number: parseFloat(volumeMatch[1])
+            };
+        }
+
+        return null;
+    }
+
+    normalizeChapterOrder(chapters) {
+        const items = [];
+
+        let position = 0;
+
+        for (const entry of chapters.entries()) {
+            items.push({
+                href: entry[0],
+                title: entry[1],
+                position: position++,
+                key: this.parseChapterKey(entry[1])
+            });
+        }
+
+        const groups = {};
+
+        for (const item of items) {
+            if (!item.key) continue;
+            if (!groups[item.key.series]) groups[item.key.series] = [];
+            groups[item.key.series].push(item);
+        }
+
+        let mainSeries = null;
+
+        for (const name of Object.keys(groups)) {
+            if (!mainSeries || groups[name].length > groups[mainSeries].length) {
+                mainSeries = name;
+            }
+        }
+
+        // 样本太少就不动，避免误判
+        if (!mainSeries || groups[mainSeries].length < 3) {
+            return chapters;
+        }
+
+        const mainItems = groups[mainSeries];
+
+        const first = mainItems[0].key;
+
+        const last = mainItems[mainItems.length - 1].key;
+
+        const descending =
+            first.volume > last.volume ||
+            (first.volume === last.volume && first.number > last.number);
+
+        // 已经是正序 —— 原样返回
+        if (!descending) {
+            return chapters;
+        }
+
+        const sorted = mainItems.slice().sort((a, b) => {
+            if (a.key.volume !== b.key.volume) {
+                return a.key.volume - b.key.volume;
+            }
+            if (a.key.number !== b.key.number) {
+                return a.key.number - b.key.number;
+            }
+            return a.position - b.position;
+        });
+
+        const ordered = new Map();
+
+        for (const item of sorted) {
+            ordered.set(item.href, item.title);
+        }
+
+        for (const item of items) {
+            if (item.key && item.key.series === mainSeries) continue;
+            ordered.set(item.href, item.title);
+        }
+
+        return ordered;
     }
 
     explore = [
@@ -202,12 +334,14 @@ class RuManHua extends ComicSource {
                 }
 
                 doc.dispose();
+                // v1.2.8：站点章节列表是倒序（最新话在前），Venera 的「下一章」= 下标 +1，
+                // 会跳成上一话；这里只在检测到主序列倒序时重排为升序（详见上面的归一化说明）。
                 return new ComicDetails({
                     title: title,
                     cover: cover,
                     description: description,
                     tags: tags,
-                    chapters: chapters
+                    chapters: this.normalizeChapterOrder(chapters)
                 });
             } catch (e) {
                 return new ComicDetails({ title: "加载失败", chapters: new Map() });
