@@ -1,8 +1,19 @@
 /**
  * 飞翔漫画 (ffppt.com) Venera 漫画源
  *
- * 版本: 1.0.1
+ * 版本: 1.0.3
  * 站点: 飞翔漫画网 https://ffppt.com/ (帝国CMS / EmpireCMS, UTF-8)
+ *
+ * 1.0.3 修复 (2026-10-13):
+ * - 首页文字更新条目先从推荐/最新更新图文列表匹配封面，再补取缺失作品详情页的封面。
+ * - 只补取封面，不加载章节分页；最多4个详情请求并发，成功封面缓存6小时、最多400条。
+ * - 新封面用HEAD检查失效链接；404使用内置“暂无封面”图，失败不缓存，下次加载重试。
+ * - 将图片请求配置注册到Venera实际使用的comic回调，不影响完整章节分页。
+ *
+ * 1.0.2 修复 (2026-10-13):
+ * - 目录按 /novel{id}/?p=N 分页，读取分页导航并合并全部页面，修复只显示前50章。
+ * - 目录请求禁用 Venera 网络缓存；章节按网站目录顺序去重，分页失败时明确报错。
+ * - 最多同时请求4页，逐批读取并检查后续页的分页导航，不写死页数或章节数。
  *
  * 1.0.1 修复 (相较 1.0.0):
  * - 首页"最近更新"原本返回 cover:"" 空字符串, 会导致 UI 发起 "" URL 请求并报
@@ -25,7 +36,7 @@
  * - 搜索: GET /e/search/index.php?keyboard={kw}&show=title,writer,byr&searchget=1
  *   302 -> /e/search/result/?searchid=N, 结果与分类页同构, 仅单页(maxPage=1), 样本"修炼"得8项
  * - 详情: /novel{id}/, 标题 h3.title[itemprop=name], 封面 .info-holder img[itemprop=image],
- *   作者 a[itemprop=author], 分类 a[itemprop=genre], 简介 .desc-text, 完整章节 #list-chapter
+ *   作者 a[itemprop=author], 分类 a[itemprop=genre], 简介 .desc-text, 当前页章节 #list-chapter
  * - 章节: /novel{id}/chapter{N}.html (N从0开始), 图片为 img.comic_img 的 data-original 懒加载属性,
  *   绝对URL, 未发现加密 (下载验证为标准 JPEG/WEBP).
  *   图片 CDN 域分布 (取证样本): img.dongman.la (主), f**.g-mh.online (部分, 易TLS失败),
@@ -43,13 +54,132 @@
 class Ffppt extends ComicSource {
     name = "飞翔漫画";
     key = "ffppt";
-    version = "1.0.1";
+    version = "1.0.3";
     minAppVersion = "1.0.0";
     url = "";
 
     HOST = "https://ffppt.com";
     UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-    PLACEHOLDER_COVER = "https://ffppt.com/favicon.ico";
+    PLACEHOLDER_COVER = "https://ffppt.com/favicon.ico?venera-no-cover=1";
+    NO_COVER_PNG = "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";
+
+    /** 图片的懒加载地址优先于占位src；仅返回可请求的HTTP地址。 */
+    imageCover(img) {
+        if (!img) return "";
+        for (const key of ["data-original", "data-src", "src"]) {
+            const value = String(img.attributes[key] || "").trim();
+            if (!value || /^(?:data|javascript|about):/i.test(value)) continue;
+            const cover = this.absoluteUrl(value);
+            if (this.isRealCover(cover)) return cover;
+        }
+        return "";
+    }
+
+    isRealCover(cover) {
+        return typeof cover === "string" && /^https?:\/\//i.test(cover)
+            && !/\/favicon(?:\.[^/?#]+)?(?:[?#]|$)/i.test(cover);
+    }
+
+    /** 只取当前作品封面，不误取页面里的推荐作品图片。 */
+    detailCover(doc) {
+        const image = doc.querySelector(".info-holder img[itemprop=image]")
+            || doc.querySelector(".info-holder img");
+        const cover = this.imageCover(image);
+        if (cover) return cover;
+        const og = doc.querySelector("meta[property='og:image']");
+        if (!og) return "";
+        return this.imageCover({ attributes: { src: og.attributes.content } });
+    }
+
+    /** 补齐文字更新条目的真实封面；不调用会读取全部目录的loadComicInfo。 */
+    async fillLatestCovers(latest, recommend) {
+        const now = Date.now();
+        const stored = this.loadData("ffpptCoverCacheV1");
+        const cache = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+        const covers = new Map();
+        const remember = (id, cover) => {
+            if (!this.isRealCover(cover)) return;
+            covers.set(id, cover);
+            if (cache[id] && cache[id].cover === cover && cache[id].expiresAt > now && cache[id].verified === true) return;
+            cache[id] = { cover: cover, expiresAt: now + 6 * 60 * 60 * 1000 };
+        };
+        for (const comic of recommend) remember(comic.id, comic.cover);
+        for (const comic of latest) {
+            const item = cache[comic.id];
+            if (!covers.has(comic.id) && item && item.expiresAt > now && this.isRealCover(item.cover)) {
+                covers.set(comic.id, item.cover);
+            }
+        }
+        if (latest.some(comic => !covers.has(comic.id))) {
+            let doc = null;
+            try {
+                const res = await Network.get(this.HOST + "/latest/", Object.assign(
+                    this._headers(this.HOST + "/"), { "cache-time": "no" }
+                ));
+                if (res.status === 200) {
+                    doc = new HtmlDocument(res.body);
+                    for (const comic of this.parseListCards(doc)) remember(comic.id, comic.cover);
+                }
+            } catch (error) {
+                console.log("latest cover list error: " + error);
+            } finally {
+                if (doc) doc.dispose();
+            }
+        }
+        const missing = Array.from(new Set(latest.filter(comic => !covers.has(comic.id)).map(comic => comic.id)));
+        let next = 0;
+        const worker = async () => {
+            while (next < missing.length) {
+                const id = missing[next++];
+                let doc = null;
+                try {
+                    const res = await Network.get(this.HOST + "/novel" + id + "/", this.directoryHeaders(id));
+                    if (res.status !== 200) continue;
+                    doc = new HtmlDocument(res.body);
+                    remember(id, this.detailCover(doc));
+                } catch (error) {
+                    console.log("cover " + id + " error: " + error);
+                } finally {
+                    if (doc) doc.dispose();
+                }
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(4, missing.length) }, () => worker()));
+        // 仅检查尚未验证的新封面。已验证缓存命中不追加图片请求。
+        const checking = Array.from(new Set(latest.map(comic => comic.id)))
+            .filter(id => covers.has(id) && !(cache[id] && cache[id].verified === true));
+        let checkNext = 0;
+        const checkWorker = async () => {
+            while (checkNext < checking.length) {
+                const id = checking[checkNext++];
+                try {
+                    const res = await Network.sendRequest("HEAD", covers.get(id),
+                        this._buildImageHeaders(covers.get(id), null, null, true).headers);
+                    const type = String(res.headers["content-type"] || res.headers["Content-Type"] || "");
+                    if (res.status === 200 && (!type || /^image\//i.test(type))) {
+                        cache[id].verified = true;
+                    } else {
+                        delete cache[id];
+                        if (res.status === 404 || res.status === 410 || (res.status === 200 && type && !/^image\//i.test(type))) {
+                            covers.delete(id);
+                        }
+                    }
+                } catch (error) {
+                    // 有些图床拒绝HEAD；仍让客户端尝试GET，但不缓存未经验证的地址。
+                    delete cache[id];
+                    console.log("cover check " + id + " error: " + error);
+                }
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(4, checking.length) }, () => checkWorker()));
+        for (const comic of latest) comic.cover = covers.get(comic.id) || this.PLACEHOLDER_COVER;
+        // 失败不写入缓存；过期或失败条目在下次加载时重新请求。
+        const limited = {};
+        Object.keys(cache).filter(id => cache[id] && cache[id].expiresAt > now && this.isRealCover(cache[id].cover))
+            .sort((a, b) => cache[b].expiresAt - cache[a].expiresAt).slice(0, 400)
+            .forEach(id => { limited[id] = cache[id]; });
+        this.saveData("ffpptCoverCacheV1", limited);
+    }
 
     /** 构造请求头 */
     _headers(referer) {
@@ -135,7 +265,7 @@ class Ffppt extends ComicSource {
                 if (src && src.indexOf("/novel/images/") < 0) { cover = src; break; }
             }
         } else {
-            cover = img.attributes.src || img.attributes["data-original"] || "";
+            cover = this.imageCover(img);
         }
         cover = this.absoluteUrl(cover);
 
@@ -196,7 +326,7 @@ class Ffppt extends ComicSource {
 
         let cover = "";
         const img = card.querySelector("img[itemprop=image]");
-        if (img) cover = img.attributes.src || img.attributes["data-original"] || "";
+        if (img) cover = this.imageCover(img);
         cover = this.absoluteUrl(cover);
 
         const subParts = [];
@@ -275,7 +405,9 @@ class Ffppt extends ComicSource {
                 const parts = [];
                 let doc = null;
                 try {
-                    const res = await Network.get(this.HOST + "/", this._headers(this.HOST + "/"));
+                    const res = await Network.get(this.HOST + "/", Object.assign(
+                        this._headers(this.HOST + "/"), { "cache-time": "no" }
+                    ));
                     if (res.status !== 200) return parts;
                     doc = new HtmlDocument(res.body);
 
@@ -302,6 +434,7 @@ class Ffppt extends ComicSource {
                         }
                     }
                     if (latest.length > 0) {
+                        await this.fillLatestCovers(latest, recommend);
                         parts.push({ title: "最近更新", comics: latest, viewMore: "最新更新" });
                     }
                 } catch (e) {
@@ -395,17 +528,108 @@ class Ffppt extends ComicSource {
         },
         loadEp: async (comicId, epId) => {
             return await this.loadChapterImages(comicId, epId);
-        }
+        },
+        onImageLoad: (url, comicId, epId) => this._buildImageHeaders(url, comicId, epId, false),
+        onThumbnailLoad: (url) => this.onThumbnailLoad(url)
     };
 
-    /** 加载漫画详情 */
+    /** 目录必须重新取站点内容，避免更新后仍显示旧目录。 */
+    directoryHeaders(comicId) {
+        return Object.assign(this._headers(this.HOST + "/novel" + comicId + "/"), {
+            "cache-time": "no"
+        });
+    }
+
+    /** 只解析本作品的目录和分页，排除推荐作品中的章节链接。 */
+    parseChapterPage(doc, comicId, page) {
+        const list = doc.querySelector("#list-chapter");
+        if (!list) throw new Error("章节目录第" + page + "页缺失，请重试");
+        const chapters = new Map();
+        const links = list.querySelectorAll("a[href*='chapter']");
+        for (const link of links) {
+            const href = (link.attributes.href || "").replace(/^https?:\/\/ffppt\.com/i, "");
+            const match = href.match(/^\/novel(\d+)\/chapter(\d+)\.html(?:[?#].*)?$/);
+            const relative = href.match(/^chapter(\d+)\.html(?:[?#].*)?$/);
+            const id = match && match[1] === comicId ? match[2] : (relative ? relative[1] : null);
+            if (id === null) continue;
+            const text = link.querySelector(".chapter-text");
+            const title = (text ? text.text : (link.attributes.title || link.text || "")).trim();
+            if (!chapters.has(id)) chapters.set(id, title || ("章节" + id));
+        }
+        if (!chapters.size) throw new Error("章节目录第" + page + "页为空，请重试");
+
+        const pager = doc.querySelector(".pagination-chap") || doc.querySelector("#pagination");
+        let maxPage = page;
+        if (pager) {
+            for (const active of pager.querySelectorAll("li.active")) {
+                const number = active.text.trim();
+                if (/^\d+$/.test(number) && Number(number) !== page) {
+                    throw new Error("章节目录第" + page + "页未正确返回，请重试");
+                }
+            }
+            for (const link of pager.querySelectorAll("a[href]")) {
+                const href = (link.attributes.href || "").replace(/^https?:\/\/ffppt\.com/i, "");
+                if (href.indexOf("/novel" + comicId + "/?") !== 0) continue;
+                const match = href.match(/[?&]p=(\d+)(?:[&#]|$)/);
+                const number = match ? Number(match[1]) : 0;
+                if (Number.isSafeInteger(number) && number > maxPage) maxPage = number;
+            }
+        }
+        return { chapters: chapters, maxPage: maxPage };
+    }
+
+    /** 按页序合并；任意页失败都不把部分目录作为完整目录返回。 */
+    async loadAllChapters(comicId, firstDoc) {
+        const first = this.parseChapterPage(firstDoc, comicId, 1);
+        const chapters = first.chapters;
+        let maxPage = first.maxPage;
+        for (let next = 2; next <= maxPage;) {
+            const pages = [];
+            while (pages.length < 4 && next <= maxPage) pages.push(next++);
+            // 等本批全部结束后再报错，确保已经解析的文档均已释放。
+            const results = await Promise.all(pages.map(async (page) => {
+                try {
+                    const res = await Network.get(
+                        this.HOST + "/novel" + comicId + "/?p=" + page,
+                        this.directoryHeaders(comicId)
+                    );
+                    if (res.status !== 200) throw new Error("HTTP " + res.status);
+                    const doc = new HtmlDocument(res.body);
+                    try {
+                        return { page: page, parsed: this.parseChapterPage(doc, comicId, page) };
+                    } finally {
+                        doc.dispose();
+                    }
+                } catch (error) {
+                    return { page: page, error: error };
+                }
+            }));
+            for (const result of results) {
+                if (result.error) {
+                    throw new Error("章节目录第" + result.page + "页加载失败，请重试：" + String(result.error));
+                }
+                let added = 0;
+                for (const entry of result.parsed.chapters) {
+                    if (!chapters.has(entry[0])) {
+                        chapters.set(entry[0], entry[1]);
+                        added++;
+                    }
+                }
+                if (!added) throw new Error("章节目录第" + result.page + "页重复返回旧目录，请重试");
+                maxPage = Math.max(maxPage, result.parsed.maxPage);
+            }
+        }
+        return chapters;
+    }
+
+    /** 加载漫画详情和全部分页章节 */
     async loadComicInfo(id) {
         const comicId = this.normalizeComicId(id);
         if (!comicId) throw "Invalid comic id";
 
         const res = await Network.get(
             this.HOST + "/novel" + comicId + "/",
-            this._headers(this.HOST + "/")
+            this.directoryHeaders(comicId)
         );
         if (res.status !== 200) throw "Comic not found";
 
@@ -425,15 +649,7 @@ class Ffppt extends ComicSource {
             }
             if (!title) title = "novel" + comicId;
 
-            let cover = "";
-            const img = doc.querySelector(".info-holder img[itemprop=image]")
-                || doc.querySelector("img[itemprop=image]");
-            if (img) cover = img.attributes.src || img.attributes["data-original"] || "";
-            if (!cover) {
-                const og = doc.querySelector("meta[property='og:image']");
-                if (og) cover = og.attributes.content || "";
-            }
-            cover = this.absoluteUrl(cover);
+            const cover = this.detailCover(doc) || this.PLACEHOLDER_COVER;
 
             let author = "";
             const authorEl = doc.querySelector(".info a[itemprop=author]");
@@ -464,20 +680,7 @@ class Ffppt extends ComicSource {
             if (genre) tags["分类"] = [genre];
             if (status) tags["状态"] = [status.split(/\s+/)[0]];
 
-            const chapters = {};
-            const listChapter = doc.querySelector("#list-chapter");
-            if (listChapter) {
-                const links = listChapter.querySelectorAll("a[href*='chapter']");
-                for (let i = 0; i < links.length; i++) {
-                    const m = (links[i].attributes.href || "").match(/chapter(\d+)\.html/);
-                    if (!m) continue;
-                    let t = "";
-                    const ct = links[i].querySelector(".chapter-text");
-                    if (ct) t = ct.text.trim();
-                    if (!t) t = (links[i].attributes.title || links[i].text || "").trim();
-                    if (!(m[1] in chapters)) chapters[m[1]] = t;
-                }
-            }
+            const chapters = await this.loadAllChapters(comicId, doc);
 
             return new ComicDetails({
                 title: title,
@@ -541,8 +744,13 @@ class Ffppt extends ComicSource {
     }
 
     /** 缩略图(封面)请求上下文 */
-    async onThumbnailLoad(url) {
-        return this._buildImageHeaders(url, null, null, true);
+    onThumbnailLoad(url) {
+        const config = this._buildImageHeaders(url, null, null, true);
+        if (url === this.PLACEHOLDER_COVER) {
+            // Venera 1.6.3的缩略图支持同步onResponse；用内置PNG替换favicon字节。
+            config.onResponse = () => new Uint8Array(Convert.decodeBase64(this.NO_COVER_PNG));
+        }
+        return config;
     }
 
     /** 构造图片请求 headers.

@@ -50,7 +50,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | dm5.js | 动漫屋 | dm5 | v7.0.3 |
 | dongmanmanhua.js | 咚漫 | dongmanmanhua | v1.0.6 |
 | dongman_la_fixed_v101.js | 动漫啦 | dongman_la | v1.0.1 |
-| ffppt.js | 飞翔漫画 | ffppt | v1.0.1 |
+| ffppt.js | 飞翔漫画 | ffppt | v1.0.3 |
 | gfmh.js | 古风漫画 | GfmhApp | v1.3.0 |
 | goda.js | GoDa漫画 | goda | v1.2.1 |
 | guazi_manhua_v1.1.0.js | 瓜子漫画 | guazimanhua | v1.0.4 |
@@ -111,6 +111,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-10-13 | 飞翔漫画 v1.0.3：目录合并全部分页，修复只显示前50条；首页文字更新条目匹配真实作品封面，补图限制4个并发并缓存成功封面，失效图显示“暂无封面”。13项封面专项及11项目录回归通过；实站20条封面为19张真实图和1张404占位图，全部解码通过。详见 [封面修复记录](docs/飞翔漫画文字列表封面修复_2026-10-13.md) 与 [目录分页修复记录](docs/飞翔漫画目录分页修复_2026-10-13.md)。 |
 | 2026-09 | 仓库建立，收录 36 个漫画源；新增免责声明、使用方法、漫画源来源说明与开发日志 |
 | 2026-09 | zero搬运网 `zerobyw33.js` 更新到 v1.2.0：新增账号登录（账号密码登录 + 注册入口）、修复章节列表不完整、补充需登录/VIP 章节提示 |
 | 2026-09 | 新增 NoyManga（`noymanga.js` v1.1.3），源总数更新为 37 |
