@@ -46,7 +46,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | ccc.js | CCC追漫台 | ccc | v1.0.1 |
 | comick.js | comick | comick | v1.2.0 |
 | comic_walker.js | カドコミ | comic_walker | v1.0.1 |
-| copy_manga.js | 拷贝漫画 | copy_manga | v1.6.7 |
+| copy_manga.js | 拷贝漫画 | copy_manga | v1.6.6 |
 | dm5.js | 动漫屋 | dm5 | v7.0.3 |
 | dongmanmanhua.js | 咚漫 | dongmanmanhua | v1.0.6 |
 | dongman_la_fixed_v101.js | 动漫啦 | dongman_la | v1.0.1 |
@@ -61,7 +61,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | manga51.js | 51漫画 | manga51 | v1.2.0 |
 | manga_dex.js | MangaDex | manga_dex | v1.1.1 |
 | manhuagui.js | 漫画柜 | ManHuaGui | v1.2.1 |
-| manhuaren.js | 漫画人 | manhuaren | v1.0.0 |
+| manhuaren.js | 漫画人 | manhuaren | v1.0.1 |
 | manhuauo_fixed_v2.js | 香蕉漫画 | manhuauo_banana_v2 | v1.0.3 |
 | manwaba_fixed_v113.js | 漫蛙吧 | manwaba | v1.1.3 |
 | manwang_fixed_v120.js | 漫网 | manwang | v1.2.0 |
@@ -77,7 +77,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | tuku_cc.js | 图库漫画 | tuku_cc | v1.0.1 |
 | wmanhua.js | W漫画 | wmanhua | v1.0.1 |
 | webtoons_zh_hant.js | LINE WEBTOON | webtoons_zh_hant | v1.0.0 |
-| youku.js | 优酷漫画 (修复版) | ykmh | v1.0.6 |
+| youku.js | 优酷漫画 (修复版) | ykmh | v1.0.7 |
 | zaimanhua.js | 再漫画 | zaimanhua | v1.0.2 |
 | zerobyw33.js | zero搬运网 | zerobyw33 | v1.2.0 |
 | mangabz.js | Mangabz | mangabz | v1.0.0 |
@@ -112,6 +112,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-10-15 | 发布漫画人 v1.0.1 与优酷漫画 v1.0.7：修复倒序目录导致“下一章”跳上一话，分别通过20项专项检查及6部、7部作品回归。详见 [漫画人记录](docs/漫画人下一章顺序修复_2026-10-14.md)、[优酷漫画记录](docs/优酷漫画下一章顺序测试与修复_2026-10-14.md)。同时将拷贝漫画索引及源清单误标的1.6.7修正为1.6.6，与仓库现有脚本一致；拷贝漫画功能代码未改，源总数保持41。 |
 | 2026-10-13 | 新增 Mangabz v1.0.0，源总数由40更新为41：每次加载动态读取首页、更新/分类/搜索、完整目录及正文；全量读取隐藏章节，使用当次阅读签名与真实图片接口。16项异常/新鲜度回归及13个分类入口通过；海贼王977条目录一致，18张正文及2张封面全部下载解码。见 [开发与回归记录](docs/Mangabz漫画源开发与回归_2026-10-13.md)。手机界面待验证。 |
 | 2026-10-13 | 飞翔漫画 v1.0.3：目录合并全部分页，修复只显示前50条；首页文字更新条目匹配真实作品封面，补图限制4个并发并缓存成功封面，失效图显示“暂无封面”。13项封面专项及11项目录回归通过；实站20条封面为19张真实图和1张404占位图，全部解码通过。详见 [封面修复记录](docs/飞翔漫画文字列表封面修复_2026-10-13.md) 与 [目录分页修复记录](docs/飞翔漫画目录分页修复_2026-10-13.md)。 |
 | 2026-09 | 仓库建立，收录 36 个漫画源；新增免责声明、使用方法、漫画源来源说明与开发日志 |

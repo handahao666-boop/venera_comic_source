@@ -1,10 +1,12 @@
 /** @type {import('./_venera_.js')} */
+// v1.0.7 (2026-10-14)：按分组识别并修正倒序目录，修复“下一章”跳到上一话。
+// 保留原有平铺章节ID、分组前缀和全部条目；更新信息独立于阅读顺序获取。
 class YKMHSource extends ComicSource {
     name = "优酷漫画 (修复版)"
     key = "ykmh"
-    version = "1.0.6"
+    version = "1.0.7"
     minAppVersion = "1.4.0"
-    url = "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/ykmh.js"
+    url = "https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/youku.js"
 
     /**
      * 修复日志分析结论 (you05.txt)：
@@ -159,13 +161,58 @@ class YKMHSource extends ComicSource {
         }
     }
 
+    _chapterOrderKey(title) {
+        const text = String(title || "").replace(/[０-９]/g, value => String(value.charCodeAt(0) - 0xFF10));
+        // 番外/后记独立判断，不让其编号打乱主线方向。
+        const extra = text.match(/(?:番外|外传|外傳|后记|後記|附录|附錄|特别篇|特別篇)\s*[:：-]?\s*(?:第\s*)?(\d+(?:\.\d+)?)/);
+        if (extra) return { series: "extra", number: Number(extra[1]) };
+        const chapter = text.match(/(?:第\s*)?(\d+(?:\.\d+)?)\s*(?:话|話|回|章|集)/);
+        if (chapter) return { series: "chapter", number: Number(chapter[1]) };
+        const volume = text.match(/(?:第\s*)?(\d+(?:\.\d+)?)\s*(?:卷|册|冊)/);
+        if (volume) return { series: "volume", number: Number(volume[1]) };
+        const original = text.match(/(?:原作版?|原作版)\s*(\d+(?:\.\d+)?)/);
+        if (original) return { series: "original", number: Number(original[1]) };
+        return null;
+    }
+
+    _chapterDirection(chapters) {
+        const series = {};
+        for (const title of chapters.values()) {
+            const key = this._chapterOrderKey(title);
+            if (!key) continue;
+            if (!series[key.series]) series[key.series] = [];
+            series[key.series].push(key.number);
+        }
+        // 使用条目最多的序列判断整组方向。原站倒序中夹有重制/试看等局部编号跳动，
+        // 只有至少80%的非相同号相邻对与首尾方向一致时才调整，模糊混排不擅自重写。
+        const candidates = Object.keys(series).sort((a, b) => series[b].length - series[a].length);
+        if (!candidates.length) return 0;
+        const numbers = series[candidates[0]];
+        if (numbers.length < 2) return 0;
+        let up = 0, down = 0;
+        for (let i = 1; i < numbers.length; i++) {
+            if (numbers[i] > numbers[i - 1]) up++;
+            if (numbers[i] < numbers[i - 1]) down++;
+        }
+        const first = numbers[0], last = numbers[numbers.length - 1], total = up + down;
+        if (!total) return 0;
+        if (first > last && down / total >= 0.8) return -1;
+        if (first < last && up / total >= 0.8) return 1;
+        return 0;
+    }
+
+    _normalizeChapterGroup(chapters) {
+        // 整组反转保留原站同号、番外和重制条目的相对发表次序，不按URL数字猜顺序。
+        return this._chapterDirection(chapters) === -1 ? new Map(Array.from(chapters).reverse()) : chapters;
+    }
+
     comic = {
         id: null,
         buildId: null,
         loadInfo: async (id) => {
             let targetUrl = id.startsWith('https://www.ykmh.net/') ? id.replace('https://www.ykmh.net/', 'https://m.ykmh.net/') : (id.startsWith('/') ? 'https://m.ykmh.net' + id : 'https://m.ykmh.net/' + id);
             if (!targetUrl.endsWith('/')) targetUrl += '/';
-            let res = await Network.get(targetUrl, { headers: { ...this.commonHeaders, 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36', 'Referer': 'https://m.ykmh.net/' } });
+            let res = await Network.get(targetUrl, { ...this.commonHeaders, 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36', 'Referer': 'https://m.ykmh.net/', 'cache-time': 'no' });
             if (res.status !== 200) throw `请求详情失败: ${res.status}`;
             const parseComicInfo = (html) => {
                 let title = (html.match(/<div class="BarTit" id="comicName">([^<]+)<\/div>/) || [])[1] || "未知标题";
@@ -192,34 +239,45 @@ class YKMHSource extends ComicSource {
                 }
                 return { title, cover: this._absoluteUrl(cover, "https://m.ykmh.net"), author, description, tags, status };
             }
+            let latestTitle = "";
             const parseChapters = (html) => {
                 let allChaptersMap = new Map();
                 let chapterGroupsPattern = /<div class="comic-chapters">[\s\S]*?<span class="Title">([^<]+)<\/span>[\s\S]*?<ul id="chapter-list-(\d+)"[^>]*>([\s\S]*?)<\/ul>/g;
                 let groupMatch;
                 while ((groupMatch = chapterGroupsPattern.exec(html)) !== null) {
-                    let groupTitle = groupMatch[1].trim(), groupContent = groupMatch[3];
+                    let groupTitle = groupMatch[1].trim(), groupContent = groupMatch[3], groupChapters = new Map();
                     let chapterPattern = /<li>\s*<a href="([^"]+)"[^>]*>\s*<span>([^<]+)<\/span>\s*<\/a>\s*<\/li>/g;
                     let chapterMatch;
                     while ((chapterMatch = chapterPattern.exec(groupContent)) !== null) {
                         let url = this._absoluteUrl(chapterMatch[1], "https://m.ykmh.net");
                         let finalTitle = groupTitle !== "连载列表" ? `[${groupTitle}] ${chapterMatch[2].trim()}` : chapterMatch[2].trim();
-                        allChaptersMap.set(url, finalTitle);
+                        groupChapters.set(url, finalTitle);
                     }
+                    if (groupChapters.size && !latestTitle) {
+                        const values = Array.from(groupChapters.values());
+                        latestTitle = this._chapterDirection(groupChapters) === 1 ? values[values.length - 1] : values[0];
+                    }
+                    for (const [url, title] of this._normalizeChapterGroup(groupChapters)) allChaptersMap.set(url, title);
                 }
                 if (allChaptersMap.size === 0) {
                     let match, allChapterPattern = /<li>\s*<a href="([^"]+)"[^>]*>\s*<span>([^<]+)<\/span>\s*<\/a>\s*<\/li>/g;
                     while ((match = allChapterPattern.exec(html)) !== null) allChaptersMap.set(this._absoluteUrl(match[1], "https://m.ykmh.net"), match[2].trim());
+                    if (allChaptersMap.size) {
+                        const values = Array.from(allChaptersMap.values());
+                        latestTitle = this._chapterDirection(allChaptersMap) === 1 ? values[values.length - 1] : values[0];
+                        allChaptersMap = this._normalizeChapterGroup(allChaptersMap);
+                    }
                 }
                 return allChaptersMap;
             }
             let info = parseComicInfo(res.body), chapters = parseChapters(res.body);
-            let updateInfo = chapters.size > 0 ? `更新至：${Array.from(chapters.values())[0]}` : "暂无更新";
+            let updateInfo = latestTitle ? `更新至：${latestTitle}` : "暂无更新";
             return { title: info.title, cover: info.cover, description: info.description, tags: { "作者": [info.author], "状态": [info.status], "更新": [updateInfo], "标签": info.tags }, chapters: chapters, recommend: [] };
         },
 
         loadEp: async (comicId, epId) => {
             let url = this._absoluteUrl(epId, "https://m.ykmh.net");
-            let res = await Network.get(url, { headers: { ...this.commonHeaders, 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1', 'Referer': 'https://m.ykmh.net/' } });
+            let res = await Network.get(url, { ...this.commonHeaders, 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1', 'Referer': 'https://m.ykmh.net/', 'cache-time': 'no' });
             if (res.status !== 200) throw `请求章节失败: ${res.status}`;
             let images = [];
             let scriptMatch = res.body.match(/var\s+chapterImages\s*=\s*(\[.*?\]);/);
@@ -263,6 +321,14 @@ class YKMHSource extends ComicSource {
                 headers: imageHeaders
             };
         },
+        onImageLoad: (url, comicId, epId) => ({
+            headers: {
+                'User-Agent': this.commonHeaders['User-Agent'],
+                'Referer': this._absoluteUrl(epId, 'https://m.ykmh.net'),
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Connection': 'keep-alive'
+            }
+        }),
         onClickTag: (namespace, tag) => {
             if (namespace === "标签") return { action: 'category', keyword: `${tag}`, param: `${YKMHSource.category_param_dict[tag]}` };
             throw "未支持此类Tag检索";

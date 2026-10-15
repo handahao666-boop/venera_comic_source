@@ -1,14 +1,16 @@
 /** @type {import('../_venera_.js')} */
+// 1.0.1 (2026-10-14)：分组内识别倒序目录并转为阅读正序，修复“下一章”跳回上一章。
+// 保留章节链接、分组及同号条目；本来正序或无法判定顺序的条目保持原样。
 class ManHuaRen extends ComicSource {
     name = "漫画人"
 
     key = "manhuaren"
 
-    version = "1.0.0"
+    version = "1.0.1"
 
     minAppVersion = "1.6.0"
 
-    url = "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/manhuaren.js"
+    url = "https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/manhuaren.js"
 
 
     init() {
@@ -477,6 +479,61 @@ class ManHuaRen extends ComicSource {
         enableTagsSuggestions: false,
     }
 
+    // 章节序号仅用于排列，不能作为ID：同号的上下篇、重制版、番外均保留原链接。
+    _chapterOrderKey(title) {
+        const text = String(title || "").replace(/[０-９]/g, value => String(value.charCodeAt(0) - 0xFF10));
+        const chapter = text.match(/第\s*(\d+(?:\.\d+)?)\s*(?:话|話|回|集|章|節|节)/);
+        const volume = text.match(/(?:第\s*)?(\d+(?:\.\d+)?)\s*(?:卷|冊|册)/);
+        if (!chapter && !volume) return null;
+        let part = 0;
+        if (/[（(]\s*上(?:篇|半|集|部)?\s*[）)]/.test(text)) part = 1;
+        else if (/[（(]\s*中(?:篇|集|部)?\s*[）)]/.test(text)) part = 2;
+        else if (/[（(]\s*下(?:篇|半|集|部)?\s*[）)]/.test(text)) part = 3;
+        const numberedPart = text.match(/[（(]\s*(\d+)\s*[）)]/);
+        if (numberedPart) part = Number(numberedPart[1]);
+        return chapter ? { series: "chapter", volume: volume ? Number(volume[1]) : 0, number: Number(chapter[1]), part: part }
+            : { series: "volume", volume: 0, number: Number(volume[1]), part: part };
+    }
+
+    _normalizeChapterOrder(chapters) {
+        const entries = Array.from(chapters, ([id, title], position) => ({ id, title, position, key: this._chapterOrderKey(title) }));
+        const series = {};
+        for (const entry of entries) {
+            if (!entry.key) continue;
+            if (!series[entry.key.series]) series[entry.key.series] = [];
+            series[entry.key.series].push(entry);
+        }
+        const compare = (a, b) => a.key.volume - b.key.volume || a.key.number - b.key.number || a.key.part - b.key.part;
+        const compareChapter = (a, b) => a.key.volume - b.key.volume || a.key.number - b.key.number;
+        let changed = false;
+        for (const name of Object.keys(series)) {
+            const items = series[name];
+            if (items.length < 2) continue;
+            let ascending = 0, descending = 0;
+            for (let i = 1; i < items.length; i++) {
+                const direction = compareChapter(items[i - 1], items[i]);
+                if (direction < 0) ascending++;
+                if (direction > 0) descending++;
+            }
+            // 同一话的上下篇不参与主话号方向判定；整组只有同号时再比较上下篇。
+            if (!ascending && !descending) {
+                for (let i = 1; i < items.length; i++) {
+                    const direction = compare(items[i - 1], items[i]);
+                    if (direction < 0) ascending++;
+                    if (direction > 0) descending++;
+                }
+            }
+            // 只有整段明确倒序才重排，避免把本来正序或混合编排的目录整段翻转。
+            if (!descending || ascending) continue;
+            const sorted = items.slice().sort((a, b) => compare(a, b) || a.position - b.position);
+            for (let i = 0; i < items.length; i++) entries[items[i].position] = sorted[i];
+            changed = true;
+        }
+        if (!changed) return chapters;
+        // 无序号公告等保留原位置；分组之间不合并、不移动。
+        return new Map(entries.map(entry => [entry.id, entry.title]));
+    }
+
     /// single comic related
     comic = {
         /**
@@ -497,7 +554,7 @@ class ManHuaRen extends ComicSource {
 
             let res = await Network.get(
                 targetUrl,
-                this._buildHeaders()
+                Object.assign(this._buildHeaders(), { 'cache-time': 'no' })
             );
             if (res.status !== 200) {
                 throw `请求失败，状态码: ${res.status}，URL: ${targetUrl}`;
@@ -516,6 +573,7 @@ class ManHuaRen extends ComicSource {
             };
 
             let doc = new HtmlDocument(html);
+            try {
 
             let title = doc.querySelector('p.detail-main-info-title')?.text?.trim()
                 || doc.querySelector('span.normal-top-title')?.text?.trim()
@@ -609,7 +667,7 @@ class ManHuaRen extends ComicSource {
                                 }
                             }
                             if (groupChapters.size > 0) {
-                                chapters.set(groupName, groupChapters);
+                                chapters.set(groupName, this._normalizeChapterOrder(groupChapters));
                             }
                         }
                     }
@@ -628,7 +686,7 @@ class ManHuaRen extends ComicSource {
                     }
                 }
                 if (groupChapters.size > 0) {
-                    chapters.set('连载', groupChapters);
+                    chapters.set('连载', this._normalizeChapterOrder(groupChapters));
                 }
             }
 
@@ -673,6 +731,9 @@ class ManHuaRen extends ComicSource {
                 stars: starValue,
                 subId: this.comic.mid ? this.comic.mid.toString() : '73225'
             });
+            } finally {
+                doc.dispose();
+            }
         },
 
         /**
