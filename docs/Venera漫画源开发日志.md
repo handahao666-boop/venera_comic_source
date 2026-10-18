@@ -2090,3 +2090,10 @@ Nine Sols + empty options -> 2 results, maxPage=1
 `Nine` 返回一个标题为 `Three unmarried Women` 的模糊结果属于服务端搜索相关性/索引行为，不是源解析错误。源可以保证请求参数、JSON 解析、结果字段映射和 Venera 返回结构，但不能补造 MOJOIN 服务端未返回的作品。实机仍应测试一个已知英文标题、一个已知中文标题和一个无结果关键词，并保留最终请求 URL 与响应摘要。
 
 [1]: https://github.com/venera-app/venera/blob/master/lib/foundation/comic_source/parser.dart "Venera parser 的 SearchOptions 与 search.load 调用"
+
+
+## 2026-10-18 CxC 0.2.2 首次入库及小说报错修复
+
+新增 CxC 漫画与小说源，源总数由41更新为42；源文件、索引和README清单版本同步为0.2.2，并配置仓库脚本更新地址。两项修复分别是：U+200B等不可见格式字符不应按缺字处理；官网人气小说列表的类型52属于文件下载型小说，需单独标注和导向官网，不能拒绝整页或作为在线文字正文。
+
+报错原站两章308046/308047的繁简体正文、首尾页、完整可见文字、PNG解码和QuickJS回归通过；原漫画与小说目录、搜索、字形/配色、会话及动态变更回放通过。无真实账号令牌、用户日志或正文/字库快照入库；Venera客户端实机与真实账号阅读待验收。完整功能、权限边界、测试范围与第三方许可见 [CxC记录](CxC漫画小说源使用与更新记录.md) 和 [第三方许可](CxC第三方许可.txt)。

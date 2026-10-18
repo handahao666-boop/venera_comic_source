@@ -244,5 +244,11 @@
         "fileName": "mangabz.js",
         "key": "mangabz",
         "version": "1.0.0"
+    },
+    {
+        "name": "CxC",
+        "fileName": "cxc.js",
+        "key": "cxc",
+        "version": "0.2.2"
     }
 ]
