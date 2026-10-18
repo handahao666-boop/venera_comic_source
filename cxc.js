@@ -1,5 +1,5 @@
 /**
- * CxC / Venera 0.2.2（漫画、小说测试版）
+ * CxC / Venera 1.0.3（漫画、小说测试版）
  * 漫画与小说均动态请求官网；小说使用原站章节字库排版为图片，在 Venera 内阅读。
  * 使用方式、修复与验证范围见 docs/CxC漫画小说源使用与更新记录.md。
  * 账号权限、年龄分级、购买/订阅状态由官网决定；不修改生日或成人模式。
@@ -7,7 +7,7 @@
 class CxcSource extends ComicSource {
   name = "CxC";
   key = "cxc";
-  version = "0.2.2";
+  version = "1.0.3";
   minAppVersion = "1.6.3";
   url = "https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/cxc.js";
   baseUrl = "https://cxc.today";
