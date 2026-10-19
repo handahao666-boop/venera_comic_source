@@ -250,5 +250,11 @@
         "fileName": "cxc.js",
         "key": "cxc",
         "version": "1.0.3"
+    },
+    {
+        "name": "サンデーうぇぶり",
+        "fileName": "sunday_webry.js",
+        "key": "sunday_webry",
+        "version": "1.0.0"
     }
 ]

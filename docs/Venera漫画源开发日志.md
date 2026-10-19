@@ -1,4 +1,4 @@
-﻿# Venera 漫画源开发日志（统一合并版 v3）
+# Venera 漫画源开发日志（统一合并版 v3）
 
 > **案例源**：漫网/香蕉漫画（`manhuau.com`、`manwang.net`）、爱看漫（`ikmmh`）、MOJOIN（`mojoin.com`）及腾讯动漫（正版，`m.ac.qq.com`）  
 > **案例版本**：漫网 v1.2.0；爱看漫 v1.1.2；MOJOIN v1.0.5；腾讯动漫与其他历史案例按原记录保留  
@@ -2102,3 +2102,15 @@ Nine Sols + empty options -> 2 results, maxPage=1
 ## 2026-10-18 CxC 版本号统一为1.0.3
 
 按用户指定，将CxC当前版本从0.2.2统一为1.0.3。同步源脚本version字段及头部说明、源索引、README源清单和安装说明；源标识cxc、功能、账号数据与章节ID保持一致，总数仍为42。核对发布脚本除版本外与0.2.2逐字一致，并使用官方初始化接口核验元数据及索引一致性；此前回归结果和实机待验收范围继续适用。
+
+
+## 2026-10-19 サンデーうぇぶり (Sunday Webry) v1.0.0 首次入库及 GigaViewer baku 混淆解密
+
+新增 サンデーうぇぶり (Sunday Webry / 小学馆 GigaViewer 平台) 漫画源，源总数由 42 更新为 43；源文件 `sunday_webry.js`、索引 `index.json` 和 README 源清单版本同步为 1.0.0，并配置仓库脚本自动更新地址。
+特性支持：
+1. 探索页：动态解析今日更新（TODAY）、人气排行榜（ランキング）与话题精选（BUZZ）；
+2. 分类页：支持星期一至星期日 7 个曜日常规连载、その他专区、读切短篇（1000+ 篇）与夜サンデー专区；
+3. 搜索与目录：支持全站检索；通过单话内嵌 Atom XML Feed 提取全量官方发布章节并自动反转为升序列表；
+4. 图像逆混淆解密：识别 GigaViewer `choJuGiga: "baku"` 混淆类型，并在 `onImageLoad` 挂载 `modifyImage` 脚本，基于 Venera 原生 `copyRange` 与 `fillImageRangeAt` 完成 8 像素对齐的 4x4 网格逆置换还原，通过真实样本像素级画面对齐验证。
+详见 [サンデーうぇぶり开发日志](サンデーうぇぶり(Sunday_Webry)_漫画源开发日志.md)。
+
