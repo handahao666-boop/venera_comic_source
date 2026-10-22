@@ -41,7 +41,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | 文件名 | 名称 | key | 版本 |
 | --- | --- | --- | --- |
 | baihehui.js | 百合会 | baihehui | v1.0.0 |
-| baozi.js | 包子漫画 | baozi | v1.1.6 |
+| baozi.js | 包子漫画 | baozi | v1.1.7 |
 | bilimanga.js | 嗶哩漫畫 | bilimanga | v1.1.7 |
 | ccc.js | CCC追漫台 | ccc | v1.0.1 |
 | comick.js | comick | comick | v1.2.0 |
@@ -49,7 +49,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | copy_manga.js | 拷贝漫画 | copy_manga | v1.6.6 |
 | dm5.js | 动漫屋 | dm5 | v7.0.3 |
 | dongmanmanhua.js | 咚漫 | dongmanmanhua | v1.0.6 |
-| dongman_la_fixed_v101.js | 动漫啦 | dongman_la | v1.0.1 |
+| dongman_la_fixed_v101.js | 动漫啦 | dongman_la | v1.0.5 |
 | ffppt.js | 飞翔漫画 | ffppt | v1.0.3 |
 | gfmh.js | 古风漫画 | GfmhApp | v1.3.0 |
 | goda.js | GoDa漫画 | goda | v1.2.1 |
@@ -72,7 +72,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | rawkuma.js | Rawkuma | rawkuma | v1.1.0 |
 | rumanhua_fixed_v16.js | 如漫画 | rumanhua_fixed_v15 | v1.2.8 |
 | sfacg_manhua.js | SF漫画 | sfacg_manhua | v1.0.0 |
-| shonen_jump_plus.js | 少年ジャンプ＋ | shonen_jump_plus | v1.1.1 |
+| shonen_jump_plus.js | 少年ジャンプ＋ | shonen_jump_plus | v1.2.0 |
 | tencent_comic_official.js | 腾讯动漫（正版） | qq_comic_official_v1 | v1.0.3 |
 | tuku_cc.js | 图库漫画 | tuku_cc | v1.0.1 |
 | wmanhua.js | W漫画 | wmanhua | v1.0.1 |
@@ -118,6 +118,7 @@ CxC 支持漫画与在线文字小说；文件版小说提供官网入口。首�
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-10-22 | 发布包子漫画 v1.1.7（非镜像）、少年ジャンプ＋ v1.2.0、动漫啦 v1.0.5：补齐包子长章节分页与网页备用入口；修复 Jump+ 的 403 HTML 解析错误，改用官网公开内容；修复动漫啦首页空白及当前页面解析。同步三个源的索引和清单，源总数保持43。发布前回归复跑通过，兼容说明与验证范围见[更新记录](docs/包子漫画_少年JumpPlus_动漫啦更新记录_2026-10-22.md)。 |
 | 2026-10-19 | 新增 サンデーうぇぶり（小学馆 Sunday Webry）v1.0.0，源总数由 42 更新为 43：支持今日更新/人气排行/话题作品探索、月曜日至日曜日及短篇(1000+)/夜サンデー分类、全站检索、基于 Atom Feed 的完整升序目录提取；实现 GigaViewer baku 4x4 逆置换网格图像透明解密，像素级对齐验证通过。详见 [开发日志](docs/サンデーうぇぶり(Sunday_Webry)_漫画源开发日志.md)。 |
 | 2026-10-18 | 按用户指定，将 CxC 当前版本由0.2.2统一为1.0.3，同步脚本 version 字段、索引、源清单和安装说明；功能及源标识保持一致，源总数仍为42。此前两项修复和验证范围继续适用。 |
 | 2026-10-18 | 新增 CxC v0.2.2（漫画与小说测试版），总数由41更新为42：动态列表、搜索与完整目录，在线小说源内分页阅读；修复零宽字符 U+200B 造成正文失败及文件版小说造成整个人气列表失败。报错两章繁简体首尾页、QuickJS、原有目录与12项会话模拟回归通过；Venera 实机待验收，EPUB 等文件版仍从官网获取。见[说明与更新记录](docs/CxC漫画小说源使用与更新记录.md)。 |

@@ -9,7 +9,7 @@
         "name": "包子漫画",
         "fileName": "baozi.js",
         "key": "baozi",
-        "version": "1.1.6"
+        "version": "1.1.7"
     },
     {
         "name": "嗶哩漫畫",
@@ -57,7 +57,7 @@
         "name": "动漫啦",
         "fileName": "dongman_la_fixed_v101.js",
         "key": "dongman_la",
-        "version": "1.0.1"
+        "version": "1.0.5"
     },
     {
         "name": "飞翔漫画",
@@ -195,7 +195,7 @@
         "name": "少年ジャンプ＋",
         "fileName": "shonen_jump_plus.js",
         "key": "shonen_jump_plus",
-        "version": "1.1.1"
+        "version": "1.2.0"
     },
     {
         "name": "腾讯动漫（正版）",
