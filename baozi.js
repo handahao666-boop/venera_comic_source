@@ -68,7 +68,10 @@ class Baozi extends ComicSource {
   // 唯一标识符
   key = "baozi";
 
-  version = "1.1.7";
+  version = "1.1.8";
+
+  // 阅读入口与图片使用完整 UA；简写 Mozilla/5.0 会使 App 阅读入口返回验证页。
+  userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
 
   minAppVersion = "1.0.0";
 
@@ -553,7 +556,7 @@ class Baozi extends ComicSource {
       const section = Number(match[1] || 0), chapter = Number(match[2]);
       const app = "https://appcn.baozimh.com/baozimhapp/comic/chapter/" + comicId + "/" + section + "_" + chapter + ".html";
       const load = async url => {
-        const r = await Network.get(url, { "User-Agent": "Mozilla/5.0", Referer: this.baseUrl + "/", "cache-time": "no" });
+        const r = await Network.get(url, { "User-Agent": this.userAgent, Referer: this.baseUrl + "/", "cache-time": "no" });
         if (r.status !== 200) throw new Error("包子：阅读页请求失败（HTTP " + r.status + "）。");
         return String(r.body || "");
       };
@@ -576,6 +579,6 @@ class Baozi extends ComicSource {
         return parts[1] + domain + quality + parts[3].replace(/^\/w\d+(?=\/)/, "");
       }, first);
     },
-    onImageLoad: url => ({ url, headers: { "User-Agent": "Mozilla/5.0", Referer: this.baseUrl + "/", Accept: "image/avif,image/webp,image/*,*/*;q=0.8" } }),
+    onImageLoad: url => ({ url, headers: { "User-Agent": this.userAgent, Referer: this.baseUrl + "/", Accept: "image/avif,image/webp,image/*,*/*;q=0.8" } }),
   };
 }

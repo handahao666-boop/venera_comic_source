@@ -9,7 +9,7 @@
         "name": "包子漫画",
         "fileName": "baozi.js",
         "key": "baozi",
-        "version": "1.1.7"
+        "version": "1.1.8"
     },
     {
         "name": "嗶哩漫畫",
@@ -213,7 +213,7 @@
         "name": "W漫画",
         "fileName": "wmanhua.js",
         "key": "wmanhua",
-        "version": "1.0.1"
+        "version": "1.0.3"
     },
     {
         "name": "LINE WEBTOON",
@@ -256,5 +256,11 @@
         "fileName": "sunday_webry.js",
         "key": "sunday_webry",
         "version": "1.0.0"
+    },
+    {
+        "name": "栗子漫画",
+        "fileName": "lizimh.js",
+        "key": "lizimh",
+        "version": "1.2.3"
     }
 ]
