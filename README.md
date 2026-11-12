@@ -1,6 +1,6 @@
 # Venera 漫画源自动配置仓库
 
-本仓库由 44 个漫画源整理而成, 用于 Venera 自动配置导入。
+本仓库收录 64 个漫画源，用于 Venera 漫画源导入和版本更新。
 
 ## 免责声明
 
@@ -29,13 +29,17 @@ https://cdn.jsdelivr.net/gh/handahao666-boop/venera_comic_source@main/index.json
 https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/index.json
 ```
 
-5. 点击确定/刷新，列表会刷出全部源，勾选即可一键添加。
+5. 点击确定或刷新，在列表里添加需要的漫画源。
+
+已安装的源可在「漫画源」页检查更新。Venera 从当前仓库索引按 `key` 比较版本，发现新版后可通过源的 `url` 下载。此前导入过离线测试版的用户需要重新导入仓库版一次，具体步骤见 [Mihon 转换源发布记录](docs/Mihon转Venera漫画源发布记录_2026-11-12.md)。
 
 ## 漫画源来源
 
 - 与官方源名字相同的，均来自官方源或由官方源修复而来
 - 部分漫画源如：嗶哩漫畫、飞翔漫画、瓜子漫画、来漫画（分流）、零搬运网、W漫画、NoyManga、栗子漫画，均来自于 GitHub 其他人发布的漫画源
 - 栗子漫画原源作者：[Walter498](https://github.com/Walter498)，来源仓库：[Walter498/Walter](https://github.com/Walter498/Walter)。本仓库基于其源进行后续修复、版本整理和更新配置，感谢原作者的贡献。
+
+- 本次新增的 20 个源由 [Keiyoushi 的 Mihon 扩展](https://github.com/keiyoushi/extensions-source)转换为 Venera 独立 JavaScript 漫画源。每个脚本保留固定的上游源码链接，详见[发布记录与上游清单](docs/Mihon转Venera漫画源发布记录_2026-11-12.md)和 [Apache-2.0 许可](docs/Mihon转换源Apache-2.0许可.txt)。
 
 ## 源清单
 
@@ -85,6 +89,26 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | mangabz.js | Mangabz | mangabz | v1.0.0 |
 | cxc.js | CxC | cxc | v1.0.3 |
 | sunday_webry.js | サンデーうぇぶり | sunday_webry | v1.0.0 |
+| xkcd.js | xkcd 中文 | xkcd | v1.0.2 |
+| bh3.js | 《崩坏3》IP站 | bh3 | v1.0.2 |
+| manhuashe.js | 漫画社 | manhuashe | v1.0.2 |
+| zazhimi.js | 杂志迷 | zazhimi | v1.0.2 |
+| terrahistoricus.js | 泰拉记事社 | terrahistoricus | v1.0.1 |
+| manhuawu.js | 漫画屋 | manhuawu | v1.0.1 |
+| sixmh.js | 六漫画 | sixmh | v1.0.1 |
+| mh1234.js | 漫画1234 | mh1234 | v1.0.0 |
+| mh160.js | 漫画160 | mh160 | v1.0.0 |
+| globalcomix.js | GlobalComix 中文 | globalcomix | v1.0.0 |
+| namicomi.js | NamiComi 中文 | namicomi | v1.0.0 |
+| toomics.js | Toomics 玩漫（繁中） | toomics | v1.0.0 |
+| kuaikanmanhua.js | 快看漫画 | kuaikanmanhua | v1.0.0 |
+| relamanhua.js | 熱辣漫畫 | relamanhua | v1.0.0 |
+| comicfury.js | Comic Fury 中文 | comicfury | v1.0.0 |
+| comicabc.js | 無限動漫 | comicabc | v1.0.0 |
+| favcomic.js | 喜漫漫画 | favcomic | v1.0.0 |
+| jisumanhua.js | 极速漫画 | jisumanhua | v1.0.0 |
+| mikagogo.js | 米卡插画 | mikagogo | v1.0.0 |
+| manben.js | 漫本 | manben | v1.0.1 |
 
 CxC 支持漫画与在线文字小说；文件版小说提供官网入口。首次阅读小说会按需下载基础字库。详见[使用说明与更新记录](docs/CxC漫画小说源使用与更新记录.md)。
 
@@ -114,12 +138,13 @@ CxC 支持漫画与在线文字小说；文件版小说提供官网入口。首�
 
 - 文件名中的空格/括号已规范化为安全文件名（例如 `copy_manga(5).js` → `copy_manga.js`），`index.json` 已同步引用新文件名。
 - 上传时把仓库内文件放在根目录即可：`index.json` 与全部 `.js` 同级。
-- 后续维护：修改/新增 `.js` 后重新生成 `index.json`，并同步更新上方源清单表格与本说明。
+- 发布新版本时，提高脚本和 `index.json` 中同一条目的 `version`，保留 `key`、文件名和脚本的 `url`。将脚本和索引一起提交到 `main`。
 
 ## 版本变更
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-11-12 | 新增 20 个由 Keiyoushi Mihon 扩展转换的 Venera 漫画源，源总数从 44 增至 64。接入本仓库索引和脚本更新地址。漫本使用 v1.0.1，包含《妖神记》和《再造空间》的正文修复。详见[发布记录与上游清单](docs/Mihon转Venera漫画源发布记录_2026-11-12.md)。 |
 | 2026-11-04 | 栗子漫画 v1.2.4：修复旧 API 域名解析失效，更新至原应用配置下发的 HTTPS 入口；新增官方 TXT 域名恢复、候选校验、并发合并和失败退避。6组 QuickJS/SDK 检查通过；真网首页、842条目录及20/128张旧章清单通过，8张图片完整解码。保留原作者 Walter498 署名，源总数仍为44。详见[修复与回归记录](docs/栗子漫画域名恢复修复_2026-11-04.md)。 |
 | 2026-11-01 | 更新包子漫画 v1.1.8 完整请求头，W漫画 v1.0.3 适配网站改版；收录基于 [Walter498/Walter](https://github.com/Walter498/Walter) 原源修复整理的栗子漫画 v1.2.3，原作者为 Walter498，并配置本仓库更新直链。索引共 44 个源。栗子旧 2.33.x 需手动导入一次；详见[更新记录](docs/包子_栗子_W漫画发布记录_2026-11-01.md)。 |
 | 2026-10-22 | 发布包子漫画 v1.1.7（非镜像）、少年ジャンプ＋ v1.2.0、动漫啦 v1.0.5：补齐包子长章节分页与网页备用入口；修复 Jump+ 的 403 HTML 解析错误，改用官网公开内容；修复动漫啦首页空白及当前页面解析。同步三个源的索引和清单，源总数保持43。发布前回归复跑通过，兼容说明与验证范围见[更新记录](docs/包子漫画_少年JumpPlus_动漫啦更新记录_2026-10-22.md)。 |

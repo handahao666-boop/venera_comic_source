@@ -262,5 +262,145 @@
         "fileName": "lizimh.js",
         "key": "lizimh",
         "version": "1.2.4"
+    },
+    {
+        "name": "xkcd 中文",
+        "fileName": "xkcd.js",
+        "key": "xkcd",
+        "version": "1.0.2",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "《崩坏3》IP站",
+        "fileName": "bh3.js",
+        "key": "bh3",
+        "version": "1.0.2",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "漫画社",
+        "fileName": "manhuashe.js",
+        "key": "manhuashe",
+        "version": "1.0.2",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "杂志迷",
+        "fileName": "zazhimi.js",
+        "key": "zazhimi",
+        "version": "1.0.2",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "泰拉记事社",
+        "fileName": "terrahistoricus.js",
+        "key": "terrahistoricus",
+        "version": "1.0.1",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "漫画屋",
+        "fileName": "manhuawu.js",
+        "key": "manhuawu",
+        "version": "1.0.1",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "六漫画",
+        "fileName": "sixmh.js",
+        "key": "sixmh",
+        "version": "1.0.1",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "漫画1234",
+        "fileName": "mh1234.js",
+        "key": "mh1234",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "漫画160",
+        "fileName": "mh160.js",
+        "key": "mh160",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "GlobalComix 中文",
+        "fileName": "globalcomix.js",
+        "key": "globalcomix",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "NamiComi 中文",
+        "fileName": "namicomi.js",
+        "key": "namicomi",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "Toomics 玩漫（繁中）",
+        "fileName": "toomics.js",
+        "key": "toomics",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "快看漫画",
+        "fileName": "kuaikanmanhua.js",
+        "key": "kuaikanmanhua",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "熱辣漫畫",
+        "fileName": "relamanhua.js",
+        "key": "relamanhua",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "Comic Fury 中文",
+        "fileName": "comicfury.js",
+        "key": "comicfury",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "無限動漫",
+        "fileName": "comicabc.js",
+        "key": "comicabc",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "喜漫漫画",
+        "fileName": "favcomic.js",
+        "key": "favcomic",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "极速漫画",
+        "fileName": "jisumanhua.js",
+        "key": "jisumanhua",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "米卡插画",
+        "fileName": "mikagogo.js",
+        "key": "mikagogo",
+        "version": "1.0.0",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
+    },
+    {
+        "name": "漫本",
+        "fileName": "manben.js",
+        "key": "manben",
+        "version": "1.0.1",
+        "description": "由 Keiyoushi 的 Mihon 扩展转换为 Venera 漫画源"
     }
 ]
