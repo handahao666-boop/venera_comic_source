@@ -1,8 +1,25 @@
 /**
  * 飞翔漫画 (ffppt.com) Venera 漫画源
  *
- * 版本: 1.0.3
+ * 版本: 1.0.7
  * 站点: 飞翔漫画网 https://ffppt.com/ (帝国CMS / EmpireCMS, UTF-8)
+ *
+ * 1.0.7 修复 (2026-11-16):
+ * - 最近更新优先使用已验证的原封面。图床缺图时用原站公开章节的首张可用图作预览。
+ * - 补图请求限制并发和首页等待时间，后台结果留给下次刷新。
+ *
+ * 1.0.6 修复 (2026-11-14):
+ * - 瓜子图床正文请求遵循原站的无 Referer 阅读方式。
+ *
+ * 1.0.5 修复 (2026-11-13):
+ * - 直接在正文图片清单里使用已验证的 CDN 地址。
+ * - 普通封面由客户端直接下载，去掉封面图片字节回调。
+ * - 首页优先补最近更新的前四张封面，单次等待最多 1.8 秒。
+ *
+ * 1.0.4 修复 (2026-11-13):
+ * - 正文 img.dongman.la 优先使用其 DNS 公布并经实测的 HTTPS CDN 地址，保留原路径和查询参数。
+ * - 首页并行读取首页和图文更新列表，复用封面缓存，移除逐部详情补图和图片 HEAD 预检。
+ * - 目录持续并发抓取并按原站分页顺序合并，保留完整目录。
  *
  * 1.0.3 修复 (2026-10-13):
  * - 首页文字更新条目先从推荐/最新更新图文列表匹配封面，再补取缺失作品详情页的封面。
@@ -54,9 +71,9 @@
 class Ffppt extends ComicSource {
     name = "飞翔漫画";
     key = "ffppt";
-    version = "1.0.3";
+    version = "1.0.7";
     minAppVersion = "1.0.0";
-    url = "";
+    url = "https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/ffppt.js";
 
     HOST = "https://ffppt.com";
     UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -91,94 +108,117 @@ class Ffppt extends ComicSource {
         return this.imageCover({ attributes: { src: og.attributes.content } });
     }
 
-    /** 补齐文字更新条目的真实封面；不调用会读取全部目录的loadComicInfo。 */
-    async fillLatestCovers(latest, recommend) {
+    /** 复用已浏览的图文列表和详情封面，供首页文字更新使用。 */
+    mergeCoverCache(comics, verified = false) {
         const now = Date.now();
-        const stored = this.loadData("ffpptCoverCacheV1");
+        const stored = this.loadData("ffpptCoverCacheV2");
         const cache = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
-        const covers = new Map();
-        const remember = (id, cover) => {
-            if (!this.isRealCover(cover)) return;
-            covers.set(id, cover);
-            if (cache[id] && cache[id].cover === cover && cache[id].expiresAt > now && cache[id].verified === true) return;
-            cache[id] = { cover: cover, expiresAt: now + 6 * 60 * 60 * 1000 };
-        };
-        for (const comic of recommend) remember(comic.id, comic.cover);
-        for (const comic of latest) {
-            const item = cache[comic.id];
-            if (!covers.has(comic.id) && item && item.expiresAt > now && this.isRealCover(item.cover)) {
-                covers.set(comic.id, item.cover);
-            }
+        for (const { id, cover } of comics) {
+            if (!this.isRealCover(cover)) continue;
+            const previous = cache[id];
+            if (!verified && previous?.verified && previous.expiresAt > now) continue;
+            cache[id] = { cover, verified, expiresAt: now + 3 * 60 * 60 * 1000 };
         }
-        if (latest.some(comic => !covers.has(comic.id))) {
-            let doc = null;
-            try {
-                const res = await Network.get(this.HOST + "/latest/", Object.assign(
-                    this._headers(this.HOST + "/"), { "cache-time": "no" }
-                ));
-                if (res.status === 200) {
-                    doc = new HtmlDocument(res.body);
-                    for (const comic of this.parseListCards(doc)) remember(comic.id, comic.cover);
-                }
-            } catch (error) {
-                console.log("latest cover list error: " + error);
-            } finally {
-                if (doc) doc.dispose();
-            }
-        }
-        const missing = Array.from(new Set(latest.filter(comic => !covers.has(comic.id)).map(comic => comic.id)));
-        let next = 0;
-        const worker = async () => {
-            while (next < missing.length) {
-                const id = missing[next++];
-                let doc = null;
-                try {
-                    const res = await Network.get(this.HOST + "/novel" + id + "/", this.directoryHeaders(id));
-                    if (res.status !== 200) continue;
-                    doc = new HtmlDocument(res.body);
-                    remember(id, this.detailCover(doc));
-                } catch (error) {
-                    console.log("cover " + id + " error: " + error);
-                } finally {
-                    if (doc) doc.dispose();
-                }
-            }
-        };
-        await Promise.all(Array.from({ length: Math.min(4, missing.length) }, () => worker()));
-        // 仅检查尚未验证的新封面。已验证缓存命中不追加图片请求。
-        const checking = Array.from(new Set(latest.map(comic => comic.id)))
-            .filter(id => covers.has(id) && !(cache[id] && cache[id].verified === true));
-        let checkNext = 0;
-        const checkWorker = async () => {
-            while (checkNext < checking.length) {
-                const id = checking[checkNext++];
-                try {
-                    const res = await Network.sendRequest("HEAD", covers.get(id),
-                        this._buildImageHeaders(covers.get(id), null, null, true).headers);
-                    const type = String(res.headers["content-type"] || res.headers["Content-Type"] || "");
-                    if (res.status === 200 && (!type || /^image\//i.test(type))) {
-                        cache[id].verified = true;
-                    } else {
-                        delete cache[id];
-                        if (res.status === 404 || res.status === 410 || (res.status === 200 && type && !/^image\//i.test(type))) {
-                            covers.delete(id);
-                        }
-                    }
-                } catch (error) {
-                    // 有些图床拒绝HEAD；仍让客户端尝试GET，但不缓存未经验证的地址。
-                    delete cache[id];
-                    console.log("cover check " + id + " error: " + error);
-                }
-            }
-        };
-        await Promise.all(Array.from({ length: Math.min(4, checking.length) }, () => checkWorker()));
-        for (const comic of latest) comic.cover = covers.get(comic.id) || this.PLACEHOLDER_COVER;
-        // 失败不写入缓存；过期或失败条目在下次加载时重新请求。
         const limited = {};
         Object.keys(cache).filter(id => cache[id] && cache[id].expiresAt > now && this.isRealCover(cache[id].cover))
             .sort((a, b) => cache[b].expiresAt - cache[a].expiresAt).slice(0, 400)
             .forEach(id => { limited[id] = cache[id]; });
-        this.saveData("ffpptCoverCacheV1", limited);
+        if (comics.length) this.saveData("ffpptCoverCacheV2", limited);
+        return limited;
+    }
+
+    latestCoversRequest = null;
+    pendingCovers = new Map();
+
+    loadLatestCovers() {
+        if (!this.latestCoversRequest) {
+            this.latestCoversRequest = this.loadListPage("latest", 1)
+                .then(result => result.comics)
+                .catch(() => [])
+                .finally(() => { this.latestCoversRequest = null; });
+        }
+        return this.latestCoversRequest;
+    }
+
+    async isAvailableCover(url, method) {
+        const headers = this.onThumbnailLoad(url).headers;
+        if (method === "GET") headers.Range = "bytes=0-1023";
+        try {
+            const response = await Network.sendRequest(method, url, headers);
+            const contentType = Object.entries(response.headers || {})
+                .find(([key]) => key.toLowerCase() === "content-type")?.[1];
+            return (response.status === 200 || response.status === 206) && /^image\//i.test(String(contentType));
+        } catch (_) {
+            return false;
+        }
+    }
+
+    async findLatestCover(id, episode, knownCover) {
+        let cover = knownCover;
+        if (!cover) {
+            try {
+                const response = await Network.get(this.HOST + "/novel" + id + "/", this._headers(this.HOST + "/"));
+                if (response.status === 200) {
+                    const doc = new HtmlDocument(response.body);
+                    try { cover = this.detailCover(doc); }
+                    finally { doc.dispose(); }
+                }
+            } catch (_) {
+                // The public chapter can still supply a preview.
+            }
+        }
+        if (cover) {
+            const candidate = this.readerImageUrl(cover);
+            if (await this.isAvailableCover(candidate, "HEAD")) return candidate;
+        }
+        if (episode === null) return "";
+        const { images } = await this.loadChapterImages(id, episode);
+        for (const preview of images.slice(0, 2)) {
+            if (await this.isAvailableCover(preview, "GET")) return preview;
+        }
+        return "";
+    }
+
+    loadCover(id, episode) {
+        if (this.pendingCovers.has(id)) return this.pendingCovers.get(id);
+        if (this.pendingCovers.size >= 4) return Promise.resolve();
+        const entry = this.mergeCoverCache([])[id];
+        const request = this.findLatestCover(id, episode, entry?.cover)
+            .then(cover => { if (cover) this.mergeCoverCache([{ id, cover }], true); })
+            .catch(() => {})
+            .finally(() => this.pendingCovers.delete(id));
+        this.pendingCovers.set(id, request);
+        return request;
+    }
+
+    async applyLatestCovers(latest, recommend, coverList) {
+        this.mergeCoverCache(recommend);
+        const resolveCovers = async (items, concurrency) => {
+            let next = 0;
+            const worker = async () => {
+                while (next < items.length) {
+                    const { comic, episode } = items[next++];
+                    if (!this.mergeCoverCache([])[comic.id]?.verified) await this.loadCover(comic.id, episode);
+                }
+            };
+            await Promise.all(Array.from({ length: concurrency }, worker));
+        };
+        const first = resolveCovers(latest.slice(0, 8), 4);
+        const rest = latest.slice(8);
+        if (rest.length) {
+            first.then(() => resolveCovers(rest, 2)).catch(() => {
+                // Refreshing the homepage gives pending covers another chance.
+            });
+        }
+        await Promise.race([
+            Promise.all([coverList, first]),
+            new Promise(resolve => setTimeout(resolve, 4500)),
+        ]);
+        const covers = this.mergeCoverCache([]);
+        for (const { comic } of latest) {
+            const item = covers[comic.id];
+            if (item?.verified) comic.cover = item.cover;
+        }
     }
 
     /** 构造请求头 */
@@ -267,7 +307,7 @@ class Ffppt extends ComicSource {
         } else {
             cover = this.imageCover(img);
         }
-        cover = this.absoluteUrl(cover);
+        cover = this.absoluteUrl(cover) || this.PLACEHOLDER_COVER;
 
         const subParts = [];
         const cate = card.querySelector(".chuyen-muc");
@@ -327,7 +367,7 @@ class Ffppt extends ComicSource {
         let cover = "";
         const img = card.querySelector("img[itemprop=image]");
         if (img) cover = this.imageCover(img);
-        cover = this.absoluteUrl(cover);
+        cover = this.absoluteUrl(cover) || this.PLACEHOLDER_COVER;
 
         const subParts = [];
         const cate = card.querySelector(".chuyen-muc");
@@ -373,7 +413,7 @@ class Ffppt extends ComicSource {
         }
         sub = parts.join(" · ");
 
-        return new Comic({
+        const comic = new Comic({
             id: id,
             title: title,
             subTitle: sub,
@@ -381,6 +421,9 @@ class Ffppt extends ComicSource {
             description: "",
             tags: []
         });
+        const href = chapA?.attributes.href || "";
+        const chapter = href.match(/^(?:https?:\/\/(?:www\.)?ffppt\.com)?\/novel(\d+)\/chapter(\d+)\.html(?:[?#].*)?$/i);
+        return { comic, episode: chapter?.[1] === id ? chapter[2] : null };
     }
 
     /** 从分页链接 /{slug}/index_N.html 中提取最大页码 */
@@ -405,9 +448,11 @@ class Ffppt extends ComicSource {
                 const parts = [];
                 let doc = null;
                 try {
-                    const res = await Network.get(this.HOST + "/", Object.assign(
+                    const home = Network.get(this.HOST + "/", Object.assign(
                         this._headers(this.HOST + "/"), { "cache-time": "no" }
                     ));
+                    const coverList = this.loadLatestCovers();
+                    const res = await home;
                     if (res.status !== 200) return parts;
                     doc = new HtmlDocument(res.body);
 
@@ -434,8 +479,8 @@ class Ffppt extends ComicSource {
                         }
                     }
                     if (latest.length > 0) {
-                        await this.fillLatestCovers(latest, recommend);
-                        parts.push({ title: "最近更新", comics: latest, viewMore: "最新更新" });
+                        await this.applyLatestCovers(latest, recommend, coverList);
+                        parts.push({ title: "最近更新", comics: latest.map(({ comic }) => comic), viewMore: "最新更新" });
                     }
                 } catch (e) {
                     console.log("explore error: " + e);
@@ -486,10 +531,13 @@ class Ffppt extends ComicSource {
         }
         let doc = null;
         try {
-            const res = await Network.get(url, this._headers(this.HOST + "/" + slug + "/"));
+            const res = await Network.get(url, {
+                ...this._headers(this.HOST + "/" + slug + "/"), "cache-time": "no",
+            });
             if (res.status !== 200) return { comics: [], maxPage: p };
             doc = new HtmlDocument(res.body);
             const comics = this.parseListCards(doc);
+            this.mergeCoverCache(comics);
             const maxPage = this.parseMaxPage(doc, p);
             return { comics: comics, maxPage: maxPage };
         } catch (e) {
@@ -529,7 +577,7 @@ class Ffppt extends ComicSource {
         loadEp: async (comicId, epId) => {
             return await this.loadChapterImages(comicId, epId);
         },
-        onImageLoad: (url, comicId, epId) => this._buildImageHeaders(url, comicId, epId, false),
+        onImageLoad: (url, comicId, epId) => this.onImageLoad(url, comicId, epId),
         onThumbnailLoad: (url) => this.onThumbnailLoad(url)
     };
 
@@ -583,11 +631,12 @@ class Ffppt extends ComicSource {
         const first = this.parseChapterPage(firstDoc, comicId, 1);
         const chapters = first.chapters;
         let maxPage = first.maxPage;
-        for (let next = 2; next <= maxPage;) {
-            const pages = [];
-            while (pages.length < 4 && next <= maxPage) pages.push(next++);
-            // 等本批全部结束后再报错，确保已经解析的文档均已释放。
-            const results = await Promise.all(pages.map(async (page) => {
+        let next = 2;
+        let failure;
+        const parsedPages = new Map();
+        const worker = async () => {
+            while (!failure && next <= maxPage) {
+                const page = next++;
                 try {
                     const res = await Network.get(
                         this.HOST + "/novel" + comicId + "/?p=" + page,
@@ -596,28 +645,25 @@ class Ffppt extends ComicSource {
                     if (res.status !== 200) throw new Error("HTTP " + res.status);
                     const doc = new HtmlDocument(res.body);
                     try {
-                        return { page: page, parsed: this.parseChapterPage(doc, comicId, page) };
+                        const parsed = this.parseChapterPage(doc, comicId, page);
+                        parsedPages.set(page, parsed.chapters);
+                        maxPage = Math.max(maxPage, parsed.maxPage);
                     } finally {
                         doc.dispose();
                     }
                 } catch (error) {
-                    return { page: page, error: error };
+                    failure ||= new Error("章节目录第" + page + "页加载失败，请重试：" + String(error));
                 }
-            }));
-            for (const result of results) {
-                if (result.error) {
-                    throw new Error("章节目录第" + result.page + "页加载失败，请重试：" + String(result.error));
-                }
-                let added = 0;
-                for (const entry of result.parsed.chapters) {
-                    if (!chapters.has(entry[0])) {
-                        chapters.set(entry[0], entry[1]);
-                        added++;
-                    }
-                }
-                if (!added) throw new Error("章节目录第" + result.page + "页重复返回旧目录，请重试");
-                maxPage = Math.max(maxPage, result.parsed.maxPage);
             }
+        };
+        await Promise.all(Array.from({ length: Math.min(4, maxPage - 1) }, worker));
+        if (failure) throw failure;
+        for (let page = 2; page <= maxPage; page++) {
+            const before = chapters.size;
+            for (const [id, title] of parsedPages.get(page)) {
+                if (!chapters.has(id)) chapters.set(id, title);
+            }
+            if (chapters.size === before) throw new Error("章节目录第" + page + "页重复返回旧目录，请重试");
         }
         return chapters;
     }
@@ -649,7 +695,9 @@ class Ffppt extends ComicSource {
             }
             if (!title) title = "novel" + comicId;
 
-            const cover = this.detailCover(doc) || this.PLACEHOLDER_COVER;
+            const knownCover = this.mergeCoverCache([])[comicId];
+            const cover = (knownCover?.verified && knownCover.cover) || this.detailCover(doc) || this.PLACEHOLDER_COVER;
+            this.mergeCoverCache([{ id: comicId, cover }]);
 
             let author = "";
             const authorEl = doc.querySelector(".info a[itemprop=author]");
@@ -701,109 +749,55 @@ class Ffppt extends ComicSource {
         }
     }
 
-    /** 加载章节图片: 图片位于 img.comic_img 的 data-original 懒加载属性 (绝对URL, 无加密) */
+    /** 按阅读页顺序读取原站图片清单。 */
     async loadChapterImages(comicId, epId) {
         const cid = this.normalizeComicId(comicId);
         const eid = this.normalizeEpId(epId);
-        if (!cid || eid === null) return { images: [] };
+        if (!cid || eid === null) throw new Error("飞翔漫画章节编号无效。");
 
         const url = this.HOST + "/novel" + cid + "/chapter" + eid + ".html";
-        let doc = null;
+        const res = await Network.get(url, {
+            ...this._headers(this.HOST + "/novel" + cid + "/"), "cache-time": "no",
+        });
+        if (res.error) throw new Error("飞翔漫画阅读页连接失败，请重试。");
+        if (res.status !== 200) throw new Error("飞翔漫画阅读页返回 HTTP " + res.status);
+        const doc = new HtmlDocument(res.body);
         try {
-            const res = await Network.get(url, this._headers(this.HOST + "/novel" + cid + "/"));
-            if (res.status !== 200) return { images: [] };
-            const body = res.body;
-            if (body.indexOf("漫画不存在") >= 0 || body.indexOf("已被删除") >= 0) {
-                return { images: [] };
+            const images = new Set();
+            for (const image of doc.querySelectorAll("img.comic_img")) {
+                const src = image.attributes["data-original"] || image.attributes["data-src"] || image.attributes.src || "";
+                const value = src.trim();
+                if (/^(?:https?:)?\/\//i.test(value)) images.add(this.readerImageUrl(this.absoluteUrl(value)));
             }
-            doc = new HtmlDocument(body);
-            const imgs = doc.querySelectorAll("img.comic_img");
-            const images = [];
-            for (let i = 0; i < imgs.length; i++) {
-                let src = imgs[i].attributes["data-original"]
-                    || imgs[i].attributes["data-src"]
-                    || imgs[i].attributes.src
-                    || "";
-                src = String(src).trim();
-                if (src.indexOf("http://") === 0 || src.indexOf("https://") === 0) {
-                    if (images.indexOf(src) < 0) images.push(src);
-                }
-            }
-            return { images: images };
-        } catch (e) {
-            console.log("loadEp error: " + e);
-            return { images: [] };
+            if (!images.size) throw new Error("飞翔漫画原站未返回此章的图片清单。");
+            return { images: [...images] };
         } finally {
-            if (doc) doc.dispose();
+            doc.dispose();
         }
     }
 
-    /** 图片请求上下文: 统一携带站点 Referer, 已知易 TLS 握手失败的 CDN 域加更多浏览器级 headers */
-    async onImageLoad(url, comicId, epId) {
-        return this._buildImageHeaders(url, comicId, epId, false);
+    readerImageUrl(url) {
+        // img.dongman.la publishes this CDN hostname as its CNAME.
+        return url.replace(/^https?:\/\/img\.dongman\.la(?=\/)/i, "https://dmlimg.youjieke.host");
     }
 
-    /** 缩略图(封面)请求上下文 */
+    onImageLoad(url, comicId, epId) {
+        const cid = this.normalizeComicId(comicId);
+        const eid = this.normalizeEpId(epId);
+        const referer = cid && eid !== null ? this.HOST + "/novel" + cid + "/chapter" + eid + ".html" : this.HOST + "/";
+        // The public reader declares <meta name="referrer" content="never">.
+        const isGuaziImage = /^https?:\/\/img\.guazicdn\.com\//i.test(url);
+        const headers = this._headers(isGuaziImage ? null : referer);
+        headers.Accept = "image/avif,image/webp,image/*,*/*;q=0.8";
+        return { url: this.readerImageUrl(url), headers };
+    }
+
     onThumbnailLoad(url) {
-        const config = this._buildImageHeaders(url, null, null, true);
+        const address = this.readerImageUrl(url);
+        const headers = this._headers(/^https:\/\/img\.guazicdn\.com\//i.test(address) ? null : this.HOST + "/");
         if (url === this.PLACEHOLDER_COVER) {
-            // Venera 1.6.3的缩略图支持同步onResponse；用内置PNG替换favicon字节。
-            config.onResponse = () => new Uint8Array(Convert.decodeBase64(this.NO_COVER_PNG));
+            return { headers, onResponse: () => Convert.decodeBase64(this.NO_COVER_PNG) };
         }
-        return config;
-    }
-
-    /** 构造图片请求 headers.
-     *  defaultThumb=true 时是封面请求: 加 Host/Origin 引导某些 CDN 通过校验
-     *  对 g-mh.online / p.miyeye.cn 等历史上 TLS 握手易失败的 CDN, 增强 headers 模拟浏览器 (TLS eof 无法在 JS 源层面根治)
-     */
-    _buildImageHeaders(url, comicId, epId, defaultThumb) {
-        const u = String(url || "");
-        const m = u.match(/^https?:\/\/([^/]+)/i);
-        const host = m ? m[1].toLowerCase() : "";
-        const baseHeaders = {
-            "User-Agent": this.UA,
-            "Referer": this.HOST + "/"
-        };
-        if (!host) {
-            return { headers: baseHeaders };
-        }
-        // 已知 TLS 握手易失败的图床域集合 (基于用户日志记录到的客户端网络错误)
-        const isFragileCdn =
-            host.indexOf("g-mh.online") >= 0 ||
-            host.indexOf("miyeye.cn") >= 0;
-        if (defaultThumb) {
-            // 封面 / 缩略图: 完整浏览器头
-            return {
-                headers: {
-                    "User-Agent": this.UA,
-                    "Referer": this.HOST + (comicId ? "/novel" + comicId + "/" : "/"),
-                    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    "Origin": this.HOST,
-                    "Host": host,
-                    "Connection": "keep-alive"
-                }
-            };
-        }
-        // 正文图 (易失败 CDN): 完整浏览器头 + 自定义 Referer 指向章节页
-        if (isFragileCdn) {
-            const epRef = comicId && epId
-                ? this.HOST + "/novel" + this.normalizeComicId(comicId) + "/chapter" + this.normalizeEpId(epId) + ".html"
-                : this.HOST + "/";
-            return {
-                headers: {
-                    "User-Agent": this.UA,
-                    "Referer": epRef,
-                    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    "Origin": this.HOST,
-                    "Host": host,
-                    "Connection": "keep-alive"
-                }
-            };
-        }
-        // 通用 (默认)
-        return { headers: baseHeaders };
+        return { url: address, headers };
     }
 }
