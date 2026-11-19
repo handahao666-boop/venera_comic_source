@@ -1,8 +1,12 @@
 /**
  * 飞翔漫画 (ffppt.com) Venera 漫画源
  *
- * 版本: 1.0.7
+ * 版本: 1.0.8
  * 站点: 飞翔漫画网 https://ffppt.com/ (帝国CMS / EmpireCMS, UTF-8)
+ *
+ * 1.0.8 修复 (2026-11-19):
+ * - 正文及章节预览遵循原站阅读页的 Referrer 策略。
+ * - 验证图床响应，识别返回 HTTP 200 的站点提示图，升级后重新获取旧缓存里的图片。
  *
  * 1.0.7 修复 (2026-11-16):
  * - 最近更新优先使用已验证的原封面。图床缺图时用原站公开章节的首张可用图作预览。
@@ -71,7 +75,7 @@
 class Ffppt extends ComicSource {
     name = "飞翔漫画";
     key = "ffppt";
-    version = "1.0.7";
+    version = "1.0.8";
     minAppVersion = "1.0.0";
     url = "https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/ffppt.js";
 
@@ -111,7 +115,7 @@ class Ffppt extends ComicSource {
     /** 复用已浏览的图文列表和详情封面，供首页文字更新使用。 */
     mergeCoverCache(comics, verified = false) {
         const now = Date.now();
-        const stored = this.loadData("ffpptCoverCacheV2");
+        const stored = this.loadData("ffpptCoverCacheV3");
         const cache = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
         for (const { id, cover } of comics) {
             if (!this.isRealCover(cover)) continue;
@@ -123,7 +127,7 @@ class Ffppt extends ComicSource {
         Object.keys(cache).filter(id => cache[id] && cache[id].expiresAt > now && this.isRealCover(cache[id].cover))
             .sort((a, b) => cache[b].expiresAt - cache[a].expiresAt).slice(0, 400)
             .forEach(id => { limited[id] = cache[id]; });
-        if (comics.length) this.saveData("ffpptCoverCacheV2", limited);
+        if (comics.length) this.saveData("ffpptCoverCacheV3", limited);
         return limited;
     }
 
@@ -140,14 +144,14 @@ class Ffppt extends ComicSource {
         return this.latestCoversRequest;
     }
 
-    async isAvailableCover(url, method) {
-        const headers = this.onThumbnailLoad(url).headers;
-        if (method === "GET") headers.Range = "bytes=0-1023";
+    async isAvailableCover(key) {
+        const { url, headers } = this.onThumbnailLoad(key);
         try {
-            const response = await Network.sendRequest(method, url, headers);
+            const response = await Network.fetchBytes("GET", url, { ...headers, "cache-time": "no" });
             const contentType = Object.entries(response.headers || {})
                 .find(([key]) => key.toLowerCase() === "content-type")?.[1];
-            return (response.status === 200 || response.status === 206) && /^image\//i.test(String(contentType));
+            return response.status === 200 && /^image\//i.test(String(contentType))
+                && response.body?.byteLength > 0 && !this.isReadingNotice(response.body);
         } catch (_) {
             return false;
         }
@@ -155,26 +159,37 @@ class Ffppt extends ComicSource {
 
     async findLatestCover(id, episode, knownCover) {
         let cover = knownCover;
+        const episodes = [episode];
         if (!cover) {
             try {
                 const response = await Network.get(this.HOST + "/novel" + id + "/", this._headers(this.HOST + "/"));
                 if (response.status === 200) {
                     const doc = new HtmlDocument(response.body);
-                    try { cover = this.detailCover(doc); }
+                    try {
+                        cover = this.detailCover(doc);
+                        for (const link of doc.querySelectorAll("#list-chapter a[href*='chapter']").slice(0, 2)) {
+                            episodes.push(this.normalizeEpId(link.attributes.href));
+                        }
+                    }
                     finally { doc.dispose(); }
                 }
             } catch (_) {
                 // The public chapter can still supply a preview.
             }
         }
-        if (cover) {
-            const candidate = this.readerImageUrl(cover);
-            if (await this.isAvailableCover(candidate, "HEAD")) return candidate;
+        return this.findCoverPreview(id, episodes, cover);
+    }
+
+    async findCoverPreview(id, episodes, cover) {
+        if (this.isRealCover(cover)) {
+            const candidate = this.coverKey(cover);
+            if (await this.isAvailableCover(candidate)) return candidate;
         }
-        if (episode === null) return "";
-        const { images } = await this.loadChapterImages(id, episode);
-        for (const preview of images.slice(0, 2)) {
-            if (await this.isAvailableCover(preview, "GET")) return preview;
+        for (const episode of new Set(episodes.filter(value => value != null))) {
+            const result = await this.loadChapterImages(id, episode).catch(() => null);
+            for (const preview of result?.images.slice(0, 2) || []) {
+                if (await this.isAvailableCover(preview)) return preview;
+            }
         }
         return "";
     }
@@ -325,7 +340,7 @@ class Ffppt extends ComicSource {
             id: id,
             title: title,
             subTitle: subParts.join(" · "),
-            cover: cover,
+            cover: this.coverKey(cover),
             description: "",
             tags: []
         });
@@ -380,7 +395,7 @@ class Ffppt extends ComicSource {
             id: id,
             title: title,
             subTitle: subParts.join(" · "),
-            cover: cover,
+            cover: this.coverKey(cover),
             description: "",
             tags: []
         });
@@ -696,8 +711,7 @@ class Ffppt extends ComicSource {
             if (!title) title = "novel" + comicId;
 
             const knownCover = this.mergeCoverCache([])[comicId];
-            const cover = (knownCover?.verified && knownCover.cover) || this.detailCover(doc) || this.PLACEHOLDER_COVER;
-            this.mergeCoverCache([{ id: comicId, cover }]);
+            const originalCover = this.detailCover(doc);
 
             let author = "";
             const authorEl = doc.querySelector(".info a[itemprop=author]");
@@ -729,6 +743,17 @@ class Ffppt extends ComicSource {
             if (status) tags["状态"] = [status.split(/\s+/)[0]];
 
             const chapters = await this.loadAllChapters(comicId, doc);
+            let cover = knownCover?.verified ? knownCover.cover : this.PLACEHOLDER_COVER;
+            if (!knownCover?.verified) {
+                const episodes = [...chapters.keys()];
+                const candidate = await this.findCoverPreview(
+                    comicId, [episodes.at(-1), ...episodes.slice(0, 2)], originalCover
+                );
+                if (candidate) {
+                    cover = candidate;
+                    this.mergeCoverCache([{ id: comicId, cover }], true);
+                }
+            }
 
             return new ComicDetails({
                 title: title,
@@ -763,14 +788,20 @@ class Ffppt extends ComicSource {
         if (res.status !== 200) throw new Error("飞翔漫画阅读页返回 HTTP " + res.status);
         const doc = new HtmlDocument(res.body);
         try {
-            const images = new Set();
+            // The site's browser reader uses "never", the legacy spelling of "no-referrer".
+            const policy = doc.querySelector("meta[name='referrer']")?.attributes.content?.trim().toLowerCase();
+            const noReferrer = policy === "never" || policy === "no-referrer";
+            const images = [];
             for (const image of doc.querySelectorAll("img.comic_img")) {
                 const src = image.attributes["data-original"] || image.attributes["data-src"] || image.attributes.src || "";
                 const value = src.trim();
-                if (/^(?:https?:)?\/\//i.test(value)) images.add(this.readerImageUrl(this.absoluteUrl(value)));
+                if (/^(?:(?:https?:)?\/\/|\/)/i.test(value)) {
+                    const address = this.readerImageUrl(this.absoluteUrl(value)).split("#", 1)[0];
+                    images.push(address + (noReferrer ? "#ffppt-108-nr" : "#ffppt-108"));
+                }
             }
-            if (!images.size) throw new Error("飞翔漫画原站未返回此章的图片清单。");
-            return { images: [...images] };
+            if (!images.length) throw new Error("飞翔漫画原站未返回此章的图片清单。");
+            return { images };
         } finally {
             doc.dispose();
         }
@@ -781,23 +812,43 @@ class Ffppt extends ComicSource {
         return url.replace(/^https?:\/\/img\.dongman\.la(?=\/)/i, "https://dmlimg.youjieke.host");
     }
 
+    coverKey(url) {
+        if (url === this.PLACEHOLDER_COVER || /#ffppt-108(?:-nr)?$/.test(url)) return url;
+        return this.readerImageUrl(url.split("#", 1)[0]) + "#ffppt-108";
+    }
+
+    isReadingNotice(bytes) {
+        // The image server can return this WebP with HTTP 200 for multiple distinct addresses.
+        if (bytes?.byteLength !== 9814) return false;
+        const digest = new Uint8Array(Convert.sha256(new Uint8Array(bytes).buffer));
+        const hex = Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
+        return hex === "4080ca5057dbf7f865082aec81e5e718045ff996dadd9c0021df31dcad418254";
+    }
+
     onImageLoad(url, comicId, epId) {
         const cid = this.normalizeComicId(comicId);
         const eid = this.normalizeEpId(epId);
         const referer = cid && eid !== null ? this.HOST + "/novel" + cid + "/chapter" + eid + ".html" : this.HOST + "/";
-        // The public reader declares <meta name="referrer" content="never">.
-        const isGuaziImage = /^https?:\/\/img\.guazicdn\.com\//i.test(url);
-        const headers = this._headers(isGuaziImage ? null : referer);
+        const address = this.readerImageUrl(url.split("#", 1)[0]);
+        const noReferrer = url.endsWith("#ffppt-108-nr") || /^https?:\/\/img\.guazicdn\.com\//i.test(address);
+        const headers = this._headers(noReferrer ? null : referer);
         headers.Accept = "image/avif,image/webp,image/*,*/*;q=0.8";
-        return { url: this.readerImageUrl(url), headers };
+        const request = { url: address, headers, onResponse: bytes => {
+            if (this.isReadingNotice(bytes)) throw new Error("图床返回了阅读提示，请在飞翔漫画原站打开本章。");
+            return bytes;
+        } };
+        return { ...request, onLoadFailed: () => request };
     }
 
     onThumbnailLoad(url) {
-        const address = this.readerImageUrl(url);
-        const headers = this._headers(/^https:\/\/img\.guazicdn\.com\//i.test(address) ? null : this.HOST + "/");
+        const address = this.readerImageUrl(url.split("#", 1)[0]);
+        const noReferrer = url.endsWith("#ffppt-108-nr") || /^https?:\/\/img\.guazicdn\.com\//i.test(address);
+        const headers = this._headers(noReferrer ? null : this.HOST + "/");
         if (url === this.PLACEHOLDER_COVER) {
             return { headers, onResponse: () => Convert.decodeBase64(this.NO_COVER_PNG) };
         }
-        return { url: address, headers };
+        return { url: address, headers, onResponse: bytes =>
+            this.isReadingNotice(bytes) ? Convert.decodeBase64(this.NO_COVER_PNG) : bytes
+        };
     }
 }
