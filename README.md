@@ -33,6 +33,8 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 
 已安装的源可在「漫画源」页检查更新。Venera 从当前仓库索引按 `key` 比较版本，发现新版后可通过源的 `url` 下载。此前导入过离线测试版的用户需要重新导入仓库版一次，具体步骤见 [Mihon 转换源发布记录](docs/Mihon转Venera漫画源发布记录_2026-11-12.md)。
 
+拷贝漫画 v1.6.6 的更新地址仍可能指向上游仓库。若检测到 v1.6.7 后下载的版本不符，可在 Venera 的漫画源编辑页将脚本的 `url` 改为本仓库的拷贝漫画直链，重载后点击该源的更新按钮。此前安装过 v1.6.12 测试版的用户可用同一更新按钮切换到正式版。 [拷贝漫画更新直链](https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/copy_manga.js)
+
 ## 漫画源来源
 
 - 与官方源名字相同的，均来自官方源或由官方源修复而来
@@ -52,7 +54,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | ccc.js | CCC追漫台 | ccc | v1.0.1 |
 | comick.js | comick | comick | v1.2.0 |
 | comic_walker.js | カドコミ | comic_walker | v1.0.1 |
-| copy_manga.js | 拷贝漫画 | copy_manga | v1.6.6 |
+| copy_manga.js | 拷贝漫画 | copy_manga | v1.6.7 |
 | dm5.js | 动漫屋 | dm5 | v7.0.3 |
 | dongmanmanhua.js | 咚漫 | dongmanmanhua | v1.0.6 |
 | dongman_la_fixed_v101.js | 动漫啦 | dongman_la | v1.0.5 |
@@ -144,6 +146,7 @@ CxC 支持漫画与在线文字小说；文件版小说提供官网入口。首�
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-11-22 | 拷贝漫画 v1.6.7。修复旧 App 接口 TLS 失败导致的公开漫画加载问题，默认使用官网桌面网页，并把脚本更新地址指向本仓库。真网回归覆盖首页、搜索、分类分页、排行和作品目录。《碧蓝之海》第三卷取得 196 页，封面与三张正文图片通过抽检。App 账号功能仍依赖 App 接口。 |
 | 2026-11-19 | 飞翔漫画 v1.0.8。修复封面和正文显示「请到本网站阅读」提示图的问题，刷新旧图片缓存。真网回归验证了 115 张图片。详见[更新与验证记录](docs/飞翔漫画提示图修复_2026-11-19.md)。 |
 | 2026-11-16 | 飞翔漫画 v1.0.7。修复最近更新封面，原封面缺失时使用同一作品的公开章节图作预览。包含图床 TLS 和部分图片 403 的修复，接入仓库更新直链。详见[更新与验证记录](docs/飞翔漫画封面与读图修复_2026-11-16.md)。 |
 | 2026-11-12 | 新增 20 个由 Keiyoushi Mihon 扩展转换的 Venera 漫画源，源总数从 44 增至 64。接入本仓库索引和脚本更新地址。漫本使用 v1.0.1，包含《妖神记》和《再造空间》的正文修复。详见[发布记录与上游清单](docs/Mihon转Venera漫画源发布记录_2026-11-12.md)。 |
