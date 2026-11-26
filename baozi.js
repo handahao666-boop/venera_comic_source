@@ -68,7 +68,7 @@ class Baozi extends ComicSource {
   // 唯一标识符
   key = "baozi";
 
-  version = "1.1.8";
+  version = "1.2.1";
 
   // 阅读入口与图片使用完整 UA；简写 Mozilla/5.0 会使 App 阅读入口返回验证页。
   userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
@@ -92,12 +92,12 @@ class Baozi extends ComicSource {
       title: "主域名",
       type: "select",
       options: [
-        { value: "bzmgcn.com" },
-        { value: "baozimhcn.com" },
-        { value: "webmota.com" },
+        { value: "webmota.com", text: "webmota.com（默认）" },
+        { value: "baozimhcn.com", text: "baozimhcn.com（繁体线路，简体使用默认）" },
         { value: "kukuc.co" },
         { value: "twmanga.com" },
         { value: "dinnerku.com" },
+        { value: "bzmgcn.com", text: "bzmgcn.com（繁体线路，简体使用默认）" },
       ],
       default: "webmota.com",
     },
@@ -129,15 +129,29 @@ class Baozi extends ComicSource {
       ],
       default: "/w640",
     },
+    open_site: {
+      title: "原站网页验证",
+      type: "callback",
+      buttonText: "在浏览器打开",
+      callback: () => UI.launchUrl("https://www.baozimh.com/"),
+    },
   };
 
   // 动态生成完整域名
   get lang() {
     return this.loadSetting("language") || this.settings.language.default;
   }
+  get domain() {
+    const fallback = this.settings.domains.default;
+    const selected = this.loadSetting("domains") || fallback;
+    // 这两条简体线路会跳转到需要浏览器验证的原站。
+    if (this.lang === "cn" && (selected === "baozimhcn.com" || selected === "bzmgcn.com")) {
+      return fallback;
+    }
+    return selected;
+  }
   get baseUrl() {
-    let domain = this.loadSetting("domains") || this.settings.domains.default;
-    return `https://${this.lang}.${domain}`;
+    return `https://${this.lang}.${this.domain}`;
   }
 
   /// 账号
@@ -146,8 +160,10 @@ class Baozi extends ComicSource {
     /// 登录
     /// 返回任意值表示登录成功
     login: async (account, pwd) => {
+      const origin = this.baseUrl;
+      const domain = this.domain;
       let res = await Network.post(
-        `${this.baseUrl}/api/bui/signin`,
+        `${origin}/api/bui/signin`,
         {
           "content-type":
             "multipart/form-data; boundary=----WebKitFormBoundaryFUNUxpOwyUaDop8s",
@@ -163,22 +179,18 @@ class Baozi extends ComicSource {
       }
       let json = JSON.parse(res.body);
       let token = json.data;
-      Network.setCookies(this.baseUrl, [
+      Network.setCookies(origin, [
         new Cookie({
           name: "TSID",
           value: token,
-          domain: this.loadSetting("domains") || this.settings.domains.default,
+          domain: domain,
         }),
       ]);
       return "ok";
     },
 
     // 退出登录时将会调用此函数
-    logout: function () {
-      Network.deleteCookies(
-        this.loadSetting("domains") || this.settings.domains.default
-      );
-    },
+    logout: () => Network.deleteCookies(this.baseUrl),
 
     get registerWebsite() {
       return `${this.baseUrl}/user/signup`;
@@ -224,23 +236,28 @@ class Baozi extends ComicSource {
       type: "singlePageWithMultiPart",
 
       load: async () => {
-        var res = await Network.get(this.baseUrl);
+        const origin = this.baseUrl;
+        const res = await Network.get(origin + "/");
+        if (res.status === 403) {
+          throw new Error(`包子漫画：${origin} 拒绝访问（HTTP 403），请检查源设置中的主域名。`);
+        }
         if (res.status !== 200) {
-          throw "Invalid status code: " + res.status;
+          throw new Error(`包子漫画：首页请求失败（HTTP ${res.status}）。`);
         }
-        let document = new HtmlDocument(res.body);
-        let parts = document.querySelectorAll("div.index-recommend-items");
-        let result = {};
-        for (let part of parts) {
-          let title = part.querySelector("div.catalog-title").text.trim();
-          let comics = part
-            .querySelectorAll("div.comics-card")
-            .map((e) => this.parseComic(e));
-          if (comics.length > 0) {
-            result[title] = comics;
+        const document = new HtmlDocument(res.body);
+        try {
+          const result = {};
+          for (const part of document.querySelectorAll(".index-recommend-items")) {
+            const title = part.querySelector(".catalog-title")?.text.trim();
+            if (!title) continue;
+            const comics = part.querySelectorAll("div.comics-card").map((card) => this.parseComic(card));
+            if (comics.length > 0) result[title] = comics;
           }
+          if (!Object.keys(result).length) throw new Error("包子漫画：首页未返回可识别的漫画列表，请确认当前主域名能打开首页。");
+          return result;
+        } finally {
+          document.dispose();
         }
-        return result;
       },
     },
   ];
@@ -458,8 +475,8 @@ class Baozi extends ComicSource {
       let cover = document.querySelector("div.l-content > div > div > amp-img")
         .attributes["src"];
       let author = document
-        .querySelector("h2.comics-detail__author")
-        .text.trim();
+        .querySelector(".comics-detail__author")
+        ?.text.trim();
       let tags = document
         .querySelectorAll("div.tag-list > span")
         .map((e) => e.text.trim());
@@ -542,7 +559,7 @@ class Baozi extends ComicSource {
         cover: cover,
         description: description,
         tags: {
-          作者: [author],
+          作者: author ? [author] : [],
           标签: tags,
         },
         chapters: chapters,

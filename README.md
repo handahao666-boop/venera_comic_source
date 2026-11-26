@@ -48,7 +48,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | 文件名 | 名称 | key | 版本 |
 | --- | --- | --- | --- |
 | baihehui.js | 百合会 | baihehui | v1.0.0 |
-| baozi.js | 包子漫画 | baozi | v1.1.8 |
+| baozi.js | 包子漫画 | baozi | v1.2.1 |
 | lizimh.js | 栗子漫画 | lizimh | v1.2.4 |
 | bilimanga.js | 嗶哩漫畫 | bilimanga | v1.1.7 |
 | ccc.js | CCC追漫台 | ccc | v1.0.1 |
