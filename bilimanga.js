@@ -54,7 +54,6 @@
 // 真實瀏覽器實測結果：搜「海賊」→ 2 條（ONE PIECE ～海賊王～ / 全彩版）；
 // 搜「輕音」→ 2 條（K－ON！輕音部 等）；搜「戀愛」→ 30 條。
 //
-// 本版仍保留降級：任何一步失敗都安全回空結果（不拋錯），避免把站點風控表現成源的崩潰。
 // 【可選】圖片轉碼代理模板，留空 = 直連原站。
 // 本站章節圖只有 AVIF，部分 Android 機型解不了；若你自建了能轉碼的代理，填在這裡即可全域生效。
 //   const IMG_PROXY_TEMPLATE = "https://example.com/avif2jpg?url={url}";
@@ -64,11 +63,12 @@ const IMG_PROXY_TEMPLATE = "";
 class BiliManga extends ComicSource {
   name = "嗶哩漫畫";
   key = "bilimanga";
-  version = "1.1.7";
+  version = "1.2.3";
   minAppVersion = "1.6.0";
+  searchQueue = Promise.resolve();
+  searchHttpClient = "";
 
-  // 更新链接，请替换为你自己的托管地址
-  url = "";
+  url = "https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/bilimanga.js";
 
   get baseUrl() {
     return "https://www.bilimanga.net";
@@ -149,8 +149,9 @@ class BiliManga extends ComicSource {
     try {
       b = new Uint8Array(buffer);
     } catch (e) {
-      return buffer;
+      throw "圖片響應不是有效字節";
     }
+    if (b.length < 12) throw "圖片響應為空或不完整";
     // 首字節是 '<' 說明是 HTML（Cloudflare 攔截頁）
     if (b.length > 0 && b[0] === 0x3c) {
       throw "圖片響應是 HTML（被站點風控攔截）";
@@ -163,6 +164,25 @@ class BiliManga extends ComicSource {
       const gif = b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46;
       if (!ftyp && !jpeg && !png && !riff && !gif) {
         throw "圖片響應不是圖片格式（很可能被站點風控攔截）";
+      }
+      if (jpeg && (b[b.length - 2] !== 0xff || b[b.length - 1] !== 0xd9)) throw "圖片傳輸不完整，請重試";
+      if (ftyp) {
+        // AVIF 有文件头也可能只下载到半张；逐个检查顶层 BMFF box 的长度。
+        let offset = 0;
+        const uint32 = i => b[i] * 16777216 + b[i + 1] * 65536 + b[i + 2] * 256 + b[i + 3];
+        while (offset < b.length) {
+          if (offset + 8 > b.length) throw "AVIF 圖片傳輸不完整";
+          let size = uint32(offset);
+          let headerSize = 8;
+          if (size === 1) {
+            if (offset + 16 > b.length) throw "AVIF 圖片傳輸不完整";
+            size = uint32(offset + 8) * 4294967296 + uint32(offset + 12);
+            headerSize = 16;
+          }
+          if (size === 0) size = b.length - offset;
+          if (size < headerSize || offset + size > b.length) throw "AVIF 圖片傳輸不完整";
+          offset += size;
+        }
       }
     }
     return buffer;
@@ -201,9 +221,34 @@ class BiliManga extends ComicSource {
   };
 
   async fetchBody(label, url) {
-    let res = await Network.get(url, this.pageHeaders());
-    if (res.status !== 200) throw label + " 请求失败: " + res.status;
-    return res.body;
+    let failure = "";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const headers = Object.assign({}, this.pageHeaders(), {"Referer": this.baseUrl + "/"});
+        const res = await Network.get(url, headers);
+        if (res.status !== 200) {
+          if (![403, 408, 429, 500, 502, 503, 504].includes(res.status)) throw {permanent: true, message: "HTTP " + res.status};
+          throw new Error("HTTP " + res.status);
+        }
+        const body = String(res.body || "");
+        if (!body.trim() || /<title[^>]*>\s*(?:Just a moment|Attention Required)/i.test(body)) throw new Error("网站返回验证页或空响应");
+        if (!/<\/html\s*>/i.test(body)) throw new Error("网页传输不完整");
+        if (label === "home" || label === "categoryComics" || label.startsWith("top-")) this.checkedBookList(body);
+        return body;
+      } catch (e) {
+        failure = e?.message || String(e);
+        if (e?.permanent) break;
+      }
+    }
+    throw new Error(label + " 加载失败（已有限重试）: " + failure + "；" + url);
+  }
+
+  coverKey(value) {
+    let url = String(value || "").trim();
+    if (!url) return "";
+    if (url.startsWith("//")) url = "https:" + url;
+    else if (url.startsWith("/")) url = this.baseUrl + url;
+    return url + (url.includes("?") ? "&" : "?") + "venera_bl=119";
   }
 
   // 解析 .book-li 漫画卡片
@@ -236,7 +281,7 @@ class BiliManga extends ComicSource {
       id: id,
       title: title,
       subTitle: subTitle,
-      cover: cover,
+      cover: this.coverKey(cover),
     });
   }
 
@@ -253,6 +298,17 @@ class BiliManga extends ComicSource {
     }
     doc.dispose();
     return comics;
+  }
+
+  checkedBookList(html) {
+    const comics = this.parseBookList(html);
+    if (comics.length) return comics;
+    const doc = new HtmlDocument(html);
+    try {
+      const text = String(doc.querySelector("body")?.text || "");
+      if (doc.querySelector(".book-ol") && /(?:沒有|没有|未找到|查無|查无|暫無|暂无).{0,20}(?:漫畫|漫画|結果|结果|作品)/.test(text)) return [];
+      throw new Error("列表未返回有效漫画，可能是错误页或网页结构已变化");
+    } finally { doc.dispose(); }
   }
 
   // 站点搜索命中**唯一一条**时会直接 302 跳到详情页
@@ -327,7 +383,7 @@ class BiliManga extends ComicSource {
     return new Comic({
       id: id,
       title: title || id,
-      cover: cover,
+      cover: this.coverKey(cover),
       subTitle: "",
     });
   }
@@ -367,10 +423,10 @@ class BiliManga extends ComicSource {
       load: async (page) => {
         let url =
           this.baseUrl +
-          `/filter/postdate_0_0_0_0_0_0_0_${page}_0_0_0.html`;
+          `/filter/lastupdate_0_0_0_0_0_0_0_${page}_0_0_0.html`;
         let body = await this.fetchBody("home", url);
         let comics = this.parseBookList(body);
-        let maxPage = this.extractMaxPage(body, 54);
+        let maxPage = this.extractMaxPage(body, 1);
         if (maxPage < 1) maxPage = 1;
         return { comics: comics, maxPage: maxPage };
       },
@@ -394,23 +450,27 @@ class BiliManga extends ComicSource {
           { key: "newhot", title: "新書榜" },
         ];
         let parts = [];
-        await Promise.all(
-          ranks.map(async (r) => {
+        // 原来同时发出12个排行榜请求，弱网下会挤占首页和图片连接。
+        let next = 0;
+        await Promise.all(Array.from({length: 3}, async () => {
+          while (next < ranks.length) {
+            const index = next++;
+            const r = ranks[index];
             try {
               let body = await this.fetchBody(
                 "top-" + r.key,
                 this.baseUrl + "/top/" + r.key + "/1.html"
               );
-              parts.push({
+              parts[index] = {
                 title: r.title,
                 comics: this.parseBookList(body),
                 viewMore: null,
-              });
-            } catch (e) {
-              parts.push({ title: r.title, comics: [], viewMore: null });
-            }
-          })
-        );
+              };
+            } catch (e) { parts[index] = { error: String(e) }; }
+          }
+        }));
+        const failed = parts.find(part => part.error);
+        if (failed) throw new Error("排行榜未完整加载: " + failed.error);
         return { data: parts, maxPage: 1 };
       },
     },
@@ -469,7 +529,7 @@ class BiliManga extends ComicSource {
   // 实测直接 GET /search.html?key=xxx 只会拿到一个没有结果的壳页（5283 字节、0 张卡片），
   // 页面里那段混淆内联脚本做的事就是：加载 ?search_guard=js 拿到 jieqiSearchJs cookie，
   // 再 XHR ?search_guard=redeem 兑换，之后才有资格提交搜索。
-  async unlockSearch() {
+  async unlockSearch(headers) {
     // 站点是 jieqi 系 CMS，搜索前必须走完一次 search_guard 三件套换「一次性票据」：
     //   GET /search.html                       -> 下发 jieqiSearchCss
     //   GET /search.html?search_guard=css
@@ -478,88 +538,112 @@ class BiliManga extends ComicSource {
     // 票据用一次就废，所以每次搜索都要重新走一遍；旧票据残留会让服务端直接回空页。
     // 这里把守卫类 cookie 先置空（而不是 deleteCookies，避免连登录 cookie 一起丢），
     // 保证换到的是新票据。
-    try {
-      Network.setCookies(this.baseUrl, [
-        new Cookie({ name: "jieqiSearchCss", value: "", domain: "www.bilimanga.net" }),
-        new Cookie({ name: "jieqiSearchJs", value: "", domain: "www.bilimanga.net" }),
-        new Cookie({ name: "jieqiSearchTicket", value: "", domain: "www.bilimanga.net" }),
-      ]);
-    } catch (e) {
-    }
+    Network.setCookies(this.baseUrl, [
+      new Cookie({ name: "jieqiSearchCss", value: "", domain: "www.bilimanga.net" }),
+      new Cookie({ name: "jieqiSearchJs", value: "", domain: "www.bilimanga.net" }),
+      new Cookie({ name: "jieqiSearchTicket", value: "", domain: "www.bilimanga.net" }),
+    ]);
 
-    const htmlHeaders = Object.assign({}, this.pageHeaders(), {
+    const htmlHeaders = Object.assign({}, headers, {
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     });
 
-    try {
-      await Network.get(this.baseUrl + "/search.html", htmlHeaders);
+    const url = this.baseUrl + "/search.html";
+    this.checkSearchResponse(await Network.get(url, htmlHeaders), "搜索页面");
+    this.checkSearchResponse(await Network.get(url + "?search_guard=css", {
+      ...htmlHeaders, Accept: "text/css,*/*;q=0.1",
+    }), "搜索准备");
 
-      await Network.get(
-        this.baseUrl + "/search.html?search_guard=css",
-        Object.assign({}, htmlHeaders, { "Accept": "text/css,*/*;q=0.1" })
-      );
-
-      const js = await Network.get(
-        this.baseUrl + "/search.html?search_guard=js",
-        Object.assign({}, htmlHeaders, { "Accept": "*/*" })
-      );
-
-      const m = /jieqiSearchJs=([^";]+)/.exec(String(js.body || ""));
-
-      if (m) {
-        try {
-          Network.setCookies(this.baseUrl, [
-            new Cookie({ name: "jieqiSearchJs", value: m[1], domain: "www.bilimanga.net" }),
-          ]);
-        } catch (e) {}
-      }
-
-      await Network.get(
-        this.baseUrl + "/search.html?search_guard=redeem&r=" + Date.now(),
-        Object.assign({}, htmlHeaders, { "Accept": "*/*", "X-Requested-With": "XMLHttpRequest" })
-      );
-
-      return true;
-    } catch (e) {
-      return false;
+    const js = await Network.get(url + "?search_guard=js", { ...htmlHeaders, Accept: "*/*" });
+    this.checkSearchResponse(js, "搜索准备");
+    const m = /jieqiSearchJs=([^";]+)/.exec(String(js.body || ""));
+    if (m) {
+      Network.setCookies(this.baseUrl, [
+        new Cookie({ name: "jieqiSearchJs", value: m[1], domain: "www.bilimanga.net" }),
+      ]);
     }
+
+    const result = await Network.get(url + "?search_guard=redeem&r=" + Date.now(), {
+      ...htmlHeaders, Accept: "*/*", "X-Requested-With": "XMLHttpRequest",
+    });
+    this.checkSearchResponse(result, "搜索准备");
   }
 
-  // 搜索
-  //
-  // 已知限制：站点把搜索 POST 放在 Cloudflare WAF 后面，非浏览器客户端常被 403 拦截
-  // （实测带/不带 guard cookie 都出现过 403，且拦截是间歇性的）。
-  // 因此这里严格按站点协议发起请求，但任何失败都安全降级为「空结果」而不是抛错，
-  // 避免把站点侧风控表现成源的崩溃。
+  checkSearchResponse(response, label) {
+    const body = String(response.body || "");
+    if (response.status === 403 ||
+        /<title[^>]*>\s*(?:Just a moment|Attention Required)/i.test(body)) {
+      throw new Error(label + "需要原站验证，请在浏览器打开哔哩漫画搜索页确认");
+    }
+    if (response.status === 429) throw new Error(label + "过于频繁，请稍后重试");
+    if (response.status !== 200) throw new Error(label + "返回 HTTP " + response.status);
+    return body;
+  }
+
+  isSearchChallenge(body) {
+    return /<title[^>]*>\s*(?:搜尋|搜索|搜寻)\s*(?:驗證|验证)\s*<\/title>/i.test(String(body || ""));
+  }
+
+  async submitSearchCode(body, url, headers, retry) {
+    const doc = new HtmlDocument(body);
+    let imagePath;
+    let fields;
+    try {
+      const form = doc.querySelector('form[method="post"]');
+      const action = form?.attributes.action?.trim();
+      if (!form || (action && action !== url && this.baseUrl + action !== url) ||
+          !form.querySelector('input[name="search_code"]')) {
+        throw new Error("原站验证码表单无法识别");
+      }
+      imagePath = form.querySelector("#search-captcha")?.attributes.src;
+      fields = ["searchkey", "searchtype", "search_challenge"].map(name => {
+        const value = form.querySelector('input[type="hidden"][name="' + name + '"]')?.attributes.value;
+        if (!value) throw new Error("原站验证码表单缺少必要字段");
+        return name + "=" + encodeURIComponent(value);
+      });
+    } finally {
+      doc.dispose();
+    }
+    if (!/^\/checkcode\.php\?[^#\s]+$/.test(imagePath || "")) {
+      throw new Error("原站验证码图片地址无效");
+    }
+    if (retry) imagePath += "&refresh=" + Date.now();
+    const image = await Network.fetchBytes("GET", this.baseUrl + imagePath, {
+      ...headers, Referer: url, Accept: "image/*", "cache-time": "no",
+    });
+    if (image.status !== 200) throw new Error("验证码图片加载失败，HTTP " + image.status);
+    BiliManga.validateImageBytes(image.body);
+
+    const title = retry ? "验证未通过，请输入新图片上的验证码" : "请输入哔哩漫画的图片验证码";
+    const code = await UI.showInputDialog(title, value =>
+      /^[A-Za-z0-9]{4}$/.test(value.trim()) ? null : "请输入图片中的 4 位字母或数字", image.body);
+    if (code == null) throw new Error("已取消搜索验证");
+    fields.push("search_code=" + encodeURIComponent(code.trim()));
+    return Network.post(url, { ...headers, Referer: url,
+      "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+    }, fields.join("&"));
+  }
+
   search = {
-    load: async (keyword, options, page) => {
+    loadNext: async (keyword, options, next) => {
       const kw = String(keyword == null ? "" : keyword).trim();
-
-      // 空关键词只会拿到空壳页
-      if (!kw) {
-        return { comics: [], maxPage: 1 };
+      if (!kw) return { comics: [], next: null };
+      const nextUrl = next == null ? null : this.searchUrl(next, false);
+      if (next != null && !nextUrl) {
+        throw new Error("原站搜索分页链接无效");
       }
 
-      // 站点对搜索次数限流（实测连搜几次就会被拦），所以这里最多只发两次查询：
-      // 先原样，失败再试一个归一化片段（详见 searchVariants）。
-      const variants = this.searchVariants(kw);
-
-      for (let i = 0; i < variants.length; i++) {
-        // 站点对连续搜索限流：两次查询挨着发，第二次会被判为 0 条，实测要等约 6 秒才恢复。
-        if (i > 0) {
-          try {
-            await new Promise((resolve) => setTimeout(resolve, 6000));
-          } catch (e) {}
-        }
-
-        const r = await this.runSearch(variants[i], 1);
-
-        if (r) {
-          return r;
-        }
-      }
-
-      return { comics: [], maxPage: 1 };
+      // 搜索表单的会话 cookie 由同一源共用，准备和提交须按顺序执行。
+      const task = this.searchQueue.then(async () => {
+        if (nextUrl) return this.runSearch(kw, nextUrl);
+        const variants = this.searchVariants(kw);
+        const first = await this.runSearch(variants[0], null);
+        if (first.comics.length || variants.length === 1) return first;
+        await new Promise(resolve => setTimeout(resolve, 6000));
+        return this.runSearch(variants[1], null);
+      });
+      this.searchQueue = task.catch(() => {});
+      return task;
     },
     optionList: [],
     enableTagsSuggestions: false,
@@ -570,16 +654,6 @@ class BiliManga extends ComicSource {
   // 所以只要查询里带符号（全角标点/破折号等）且含中日文，就**先拿中日文片段去搜**，
   // 这样一次请求就能命中，也不会白跑一次触发站点限流；原样查询作为兜底留到第二次。
   searchVariants(kw) {
-    const out = [kw];
-
-    const push = (v) => {
-      const s = String(v == null ? "" : v).trim();
-
-      if (s && s !== kw && out.indexOf(s) < 0) {
-        out.push(s);
-      }
-    };
-
     const cjk = (kw.match(/[\u3400-\u9fff\u3040-\u30ff]{2,}/g) || []).sort((a, b) => b.length - a.length)[0];
 
     // 只有当查询里混了符号/全角标点，或同时含中日文与英文时才降级；
@@ -590,64 +664,95 @@ class BiliManga extends ComicSource {
       return [cjk, kw];
     }
 
-    return out;
+    return [kw];
   }
 
-  // 单次搜索：换票 → POST /search.html + searchkey → 解析。attempts 次内换票重试。
-  async runSearch(q, attempts) {
-    const enc = encodeURIComponent(q);
-
-    for (let attempt = 0; attempt < (attempts || 1); attempt++) {
-      if (attempt > 0) {
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 1200));
-        } catch (e) {}
-      }
-
-      try {
-        await this.unlockSearch();
-      } catch (e) {}
-
-      try {
-        const res = await Network.post(
-          this.baseUrl + "/search.html",
-          Object.assign({}, this.pageHeaders(), {
-            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-          }),
-          "searchkey=" + enc
-        );
-
-        if (res.status === 200 && res.body) {
-          const comics = this.parseBookList(res.body);
-
-          if (comics.length > 0) {
-            return { comics: comics, maxPage: this.extractMaxPage(res.body, 1) };
-          }
-
-          // 唯一一条结果会被 302 到详情页（Network 已跟随重定向），从详情页还原这一条
-          const single = this.parseSingleDetail(res.body);
-
-          if (single) {
-            return { comics: [single], maxPage: 1 };
-          }
-        }
-
-        // 兼容「Network 没有跟随重定向」的情况：自己按 Location 再取一次详情页
-        const loc = res.headers && (res.headers.location || res.headers.Location);
-
-        if (loc && (res.status === 301 || res.status === 302 || res.status === 303 || res.status === 307 || res.status === 308)) {
-          const target = /^https?:\/\//.test(loc) ? loc : this.baseUrl + (loc.charAt(0) === "/" ? loc : "/" + loc);
-          const detail = await Network.get(target, this.pageHeaders());
-          const single = detail && detail.status === 200 ? this.parseSingleDetail(detail.body) : null;
-
-          if (single) {
-            return { comics: [single], maxPage: 1 };
-          }
-        }
-      } catch (e) {}
+  searchUrl(href, detail) {
+    let path = String(href || "").trim();
+    if (path.startsWith("?") && !detail) path = "/search.html" + path;
+    if (path.startsWith("https://") || path.startsWith("//")) {
+      const absolute = path.startsWith("//") ? "https:" + path : path;
+      if (!absolute.startsWith(this.baseUrl + "/")) return null;
+      path = absolute.slice(this.baseUrl.length);
+    } else if (!path.startsWith("/")) {
+      path = "/" + path;
     }
+    const valid = detail
+      ? /^\/detail\/\d+\.html(?:\?[^#]*)?$/.test(path)
+      : /^\/search\.html\?[^#]+$/.test(path) ||
+        /^\/search\/[^\s/?#\\]+_[1-9]\d*\.html$/.test(path);
+    return valid ? this.baseUrl + path : null;
+  }
 
-    return null;
+  async runSearch(keyword, next) {
+    let httpClient = this.searchHttpClient;
+    const appVersion = typeof APP === "undefined" ? "" : String(APP.version || "");
+    const [major, minor, patch] = appVersion.split(".").map(part => parseInt(part, 10));
+    const canSwitchClient = major > 1 || (major === 1 && (minor > 6 || (minor === 6 && patch >= 3)));
+    for (let attempt = 0; ; attempt++) {
+      const url = this.baseUrl + "/search.html";
+      const headers = { ...this.pageHeaders(), Referer: url };
+      if (httpClient) headers.http_client = httpClient;
+      try {
+        let response;
+        let responseUrl = next || url;
+        if (next == null) {
+          await this.unlockSearch(headers);
+          response = await Network.post(url, {
+            ...headers, "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+          }, "searchkey=" + encodeURIComponent(keyword));
+        } else {
+          response = await Network.get(next, { ...headers, "cache-time": "no" });
+        }
+
+        for (let verification = 0; ; verification++) {
+          if ([301, 302, 303, 307, 308].includes(response.status)) {
+            const loc = response.headers?.location || response.headers?.Location;
+            const target = this.searchUrl(loc, true) || this.searchUrl(loc, false);
+            if (target) {
+              response = await Network.get(target, { ...headers, "cache-time": "no" });
+              responseUrl = target;
+            }
+          }
+          if (!this.isSearchChallenge(response.body)) break;
+          if (verification === 2) throw new Error("原站连续两次未通过验证码，请重试搜索");
+          response = await this.submitSearchCode(response.body, responseUrl, headers, verification > 0);
+        }
+
+        const body = this.checkSearchResponse(response, "搜索请求");
+        if (!/<\/html\s*>/i.test(body)) throw new Error("搜索网页传输不完整");
+        const result = this.parseSearchResults(body, next);
+        this.searchHttpClient = httpClient;
+        return result;
+      } catch (error) {
+        const message = error?.message || String(error);
+        const transportFailure = /tls handshake|HandshakeException|terminated during handshake|UnexpectedEof|connection reset|ECONNRESET/i.test(message)
+          && !/certificat|证书/i.test(message);
+        if (attempt !== 0 || !canSwitchClient || !transportFailure) {
+          if (transportFailure) throw new Error("搜索连接在 HTTPS 握手阶段中断，请检查当前网络后重试");
+          throw new Error("搜索加载失败，" + message);
+        }
+        httpClient = httpClient ? "" : "dart:io";
+      }
+    }
+  }
+
+  parseSearchResults(body, currentPage) {
+    const doc = new HtmlDocument(body);
+    try {
+      const title = doc.querySelector("head title")?.text || "";
+      if (!/(?:搜索|搜尋|搜寻)[\s　]*(?:結果|结果)/.test(title)) {
+        const single = this.parseSingleDetail(body);
+        if (single) return { comics: [single], next: null };
+        throw new Error("原站未返回搜索结果页，请稍后重试");
+      }
+      const comics = this.checkedBookList(body);
+      const href = doc.querySelector(".pagelink a.next")?.attributes.href;
+      const next = this.searchUrl(href, false);
+      return { comics, next: comics.length && next !== currentPage ? next : null };
+    } finally {
+      doc.dispose();
+    }
   }
 
   // 单本漫画
@@ -659,11 +764,12 @@ class BiliManga extends ComicSource {
       let title = "";
       let titleEl = doc.querySelector(".book-title");
       if (titleEl) title = titleEl.text.trim();
+      if (!title) { doc.dispose(); throw new Error("详情页未返回有效漫画标题，请检查原站或重试"); }
 
       let cover = "";
       let coverImg = doc.querySelector(".book-cover");
       if (coverImg) {
-        cover = coverImg.attributes["src"] || coverImg.attributes["data-src"] || "";
+        cover = coverImg.attributes["data-src"] || coverImg.attributes["src"] || "";
       }
 
       let authors = [];
@@ -692,11 +798,11 @@ class BiliManga extends ComicSource {
       let cdoc = new HtmlDocument(catalog);
       for (let a of cdoc.querySelectorAll('li.chapter-li a[href*="/read/"]')) {
         let href = a.attributes["href"] || "";
-        let m = href.match(/\/read\/\d+\/(\d+)\.html/);
-        if (!m) continue;
+        let m = href.match(/\/read\/(\d+)\/(\d+)\.html/);
+        if (!m || m[1] !== String(id)) continue;
         let chTitle = a.text ? a.text.trim() : "";
         if (!chTitle) continue;
-        chapters.set(m[1], chTitle);
+        chapters.set(m[2], chTitle);
       }
       cdoc.dispose();
 
@@ -708,7 +814,7 @@ class BiliManga extends ComicSource {
 
       return new ComicDetails({
         title: title || id,
-        cover: cover,
+        cover: this.coverKey(cover),
         description: description,
         tags: tagMap,
         chapters: chapters,
@@ -744,7 +850,7 @@ class BiliManga extends ComicSource {
       // 只有「清緩存」或「換 URL」能解。
       // 這裡統一加 ?v=<版本>，改一次版本號就等於給全部章節圖換一個 cache key，
       // 老用戶不用手動清緩存也能自動恢復。（真網已驗證：帶查詢參數仍返回同一份 200 AVIF。）
-      const CACHE_BUST = "v=117";
+      const CACHE_BUST = "v=119";
       let busted = [];
       for (let src of images) {
         busted.push(
@@ -791,19 +897,21 @@ class BiliManga extends ComicSource {
           // 注意：Dart 側每次用完都會 free 掉這個 JS 回調，
           // 所以每次重試都給一個新的函數對象，避免共享同一個 invokable 被提前釋放。
           onResponse: (buffer) => validate(buffer),
-          onLoadFailed: () => build(i + 1),
+          onLoadFailed: () => i + 1 < profiles.length ? build(i + 1) : null,
         };
       };
       return build(0);
     },
 
     onThumbnailLoad: (url) => {
+      const target = String(url || "").replace(/([?&])venera_bl=119(&|$)/, (m, prefix, suffix) => suffix ? prefix : "").replace(/[?&]$/, "");
       const headers = this.imageHeaderProfiles("https://www.bilimanga.net/")[0];
       return {
         url: IMG_PROXY_TEMPLATE
-          ? IMG_PROXY_TEMPLATE.split("{url}").join(encodeURIComponent(url))
-          : url,
+          ? IMG_PROXY_TEMPLATE.split("{url}").join(encodeURIComponent(target))
+          : target,
         headers: headers,
+        onResponse: (buffer) => BiliManga.validateImageBytes(buffer),
       };
     },
 
