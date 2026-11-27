@@ -2,11 +2,11 @@
 class CopyManga extends ComicSource {
     name = "拷贝漫画";
     key = "copy_manga";
-    version = "1.6.7";
+    version = "1.6.13";
     minAppVersion = "1.6.0";
     url = "https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/copy_manga.js";
 
-    static defaultApiUrl = "api.copy202601.com";
+    static defaultApiUrl = "api.copy2000.online";
     static defaultCopyRegion = "0";
     static defaultImageQuality = "1500";
     static searchApi = "/api/kb/web/searchcl/comics";
@@ -114,13 +114,11 @@ class CopyManga extends ComicSource {
         return /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(s) ? s.toLowerCase() : "";
     }
     get automaticApi() {
-        const value = this.host(this.loadSetting("base_url"));
-        return !value || value === "api.copy2000.online" || value === CopyManga.defaultApiUrl || value === this.host(this.settings?.base_url?.default);
+        return !this.host(this.loadSetting("base_url"));
     }
     get apiUrl() {
         const configured = this.host(this.loadSetting("base_url"));
-        if (!this.automaticApi) return "https://" + configured;
-        return "https://" + (this.host(this.loadData("_discovered_api")) || CopyManga.defaultApiUrl);
+        return "https://" + (configured || this.host(this.loadData("_discovered_api")) || CopyManga.defaultApiUrl);
     }
     get webUrl() { return "https://" + (this.host(this.loadSetting("web_host")) || "www.copy4000.com"); }
     get copyRegion() { return this.loadSetting("region") === "1" ? "1" : "0"; }
@@ -129,7 +127,7 @@ class CopyManga extends ComicSource {
         return ["800", "1200", "1500"].includes(q) ? q : CopyManga.defaultImageQuality;
     }
     get imageFormat() { return this.loadSetting("image_format") === "webp" ? "webp" : "original"; }
-    get usePublicWeb() { return this.loadSetting("reader_entry") !== "app"; }
+    get usePublicWeb() { return this.loadSetting("reader_entry") === "web"; }
     get token() { const t = this.loadData("token"); return typeof t === "string" ? t.trim() : ""; }
     randomDigits(n) { return Array.from({length: n}, () => Math.floor(Math.random() * 10)).join(""); }
     get deviceinfo() {
@@ -204,7 +202,7 @@ class CopyManga extends ComicSource {
             if (extraHeaders.dnts !== undefined) headers.dnts = String(extraHeaders.dnts);
             let response;
             try { response = await Network.sendRequest("GET", url, headers, null, {}); }
-            catch (e) { throw this.error(0, "官网网页连接失败：" + String(e?.message || e).slice(0, 200)); }
+            catch (e) { throw this.error(0, "官网网页连接失败。可在源设置的「访问入口」切换至 App 接口。原始错误：" + String(e?.message || e).slice(0, 200)); }
             let payload; try { payload = JSON.parse(String(response.body || "")); } catch (_) {}
             const issue = this.classifyResponse(response, payload);
             if (issue) {
@@ -538,7 +536,6 @@ class CopyManga extends ComicSource {
                     const hosts = Array.isArray(groups?.[0]) ? groups[0] : [];
                     const host = hosts.map(h => this.host(h)).find(Boolean);
                     if (!host) continue;
-                    this.settings.base_url.default = host;
                     this.saveData("_discovered_api", host); this.saveData("_api_discovered_at", Date.now());
                     return true;
                 } catch (e) {
@@ -1009,19 +1006,19 @@ class CopyManga extends ComicSource {
         return true;
     }
     settings = {
-        reader_entry: {title: "访问入口", type: "select", options: [{value: "web", text: "官网桌面网页（公开内容）"}, {value: "app", text: "App接口（保留账号功能）"}], default: "web"},
+        reader_entry: {title: "访问入口", type: "select", options: [{value: "app", text: "App 接口（保留账号功能）"}, {value: "web", text: "官网桌面网页（公开内容）"}], default: "app"},
         favorites_ordering: {title: "收藏排序方式", type: "select", options: [{value: "-datetime_updated", text: "更新时间"}, {value: "-datetime_modifier", text: "收藏时间"}, {value: "-datetime_browse", text: "阅读时间"}], default: "-datetime_updated"},
         region: {title: "CDN线路", type: "select", options: [{value: "0", text: "海外图片线路"}, {value: "1", text: "大陆线路"}], default: "0"},
         image_quality: {title: "图片质量", type: "select", options: [{value: "800", text: "低 (800)"}, {value: "1200", text: "中 (1200)"}, {value: "1500", text: "高 (1500)"}], default: "1500"},
         image_format: {title: "图片格式", type: "select", options: [{value: "original", text: "保留原站格式（推荐）"}, {value: "webp", text: "WebP（旧版兼容）"}], default: "original"},
         search_api: {title: "搜索方式", type: "select", options: [{value: "baseAPI", text: "基础API"}, {value: "webAPI", text: "网页端API"}], default: "baseAPI"},
         web_host: {title: "官网网页域名", type: "select", options: [{value: "www.copy4000.com"}, {value: "www.copy5000.com"}, {value: "www.copy20.com"}], default: "www.copy4000.com"},
-        base_url: {title: "API地址（默认自动发现，其他域名作为自定义地址）", type: "input", validator: "^(?:https?://)?(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}/?$", default: CopyManga.defaultApiUrl},
+        base_url: {title: "API地址（输入 auto 使用自动发现）", type: "input", validator: "^(?:auto|(?:https?://)?(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}/?)$", default: CopyManga.defaultApiUrl},
         request_interval: {title: "接口请求最小间隔", type: "select", options: [{value: "600", text: "600 毫秒"}, {value: "1000", text: "1 秒（推荐）"}, {value: "1500", text: "1.5 秒"}], default: "1000"},
         refresh_api: {title: "重新发现官方API线路", type: "callback", buttonText: "刷新线路", callback: async () => {
             try {
                 const ok = await this.refreshAppApi(true);
-                UI.showMessage(ok ? (this.automaticApi ? "已更新官方线路" : "已更新备用线路，保留当前自定义API地址") : "线路发现暂不可用，保留已有地址");
+                UI.showMessage(ok ? (this.automaticApi ? "已更新官方线路" : "已发现官方线路。将「API地址」设为 auto 即可使用") : "线路发现暂不可用，保留已有地址");
             } catch (e) { UI.showMessage(String(e?.message || e)); }
         }},
         restriction_status: {title: "原站限制与剩余等待", type: "callback", buttonText: "查看", callback: () => {
