@@ -50,7 +50,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | baihehui.js | 百合会 | baihehui | v1.0.0 |
 | baozi.js | 包子漫画 | baozi | v1.2.1 |
 | lizimh.js | 栗子漫画 | lizimh | v1.2.4 |
-| bilimanga.js | 嗶哩漫畫 | bilimanga | v1.2.3 |
+| bilimanga.js | 嗶哩漫畫 | bilimanga | v1.2.4 |
 | ccc.js | CCC追漫台 | ccc | v1.0.1 |
 | comick.js | comick | comick | v1.2.0 |
 | comic_walker.js | カドコミ | comic_walker | v1.0.1 |
@@ -146,6 +146,7 @@ CxC 支持漫画与在线文字小说；文件版小说提供官网入口。首�
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-11-27 | 哔哩漫画 v1.2.4。搜索改为 ID/链接直达、原站直搜与防 429 控速本地全库索引（支持断点续传缓存、简繁归一化匹配及 `#刷新索引` 手动重建），并兼容 `bilicomic.net` 链接解析。 |
 | 2026-11-27 | 拷贝漫画 v1.6.13。默认访问入口改为 App 接口，基础 API 地址使用 `api.copy2000.online`，保留官网网页入口供手动切换。更新方式及回归范围见[发布记录](docs/拷贝漫画App默认入口_2026-11-27.md)。 |
 | 2026-11-27 | 爱看漫 v3.0.1。发布用户修复版，适配新版首页卡片和详情目录，章节图片分页支持最多四个并发请求，接入本仓库更新直链。[更新与验证记录](docs/爱看漫改版适配_2026-11-27.md) |
 | 2026-11-26 | 哔哩漫画 v1.2.3。搜索遇到原站图片验证码时，可在 Venera 内手动输入并继续搜索。修复原站结果分页，并接入本仓库更新地址。[更新与回归记录](docs/哔哩漫画搜索验证修复_2026-11-26.md) |
