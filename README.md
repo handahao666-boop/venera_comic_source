@@ -63,7 +63,7 @@ https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/inde
 | goda.js | GoDa漫画 | goda | v1.2.1 |
 | guazi_manhua_v1.1.0.js | 瓜子漫画 | guazimanhua | v1.0.4 |
 | hipmh.js | 嬉皮漫畫 | hipmh | v1.0.1 |
-| ikmmh_v2.js | 爱看漫 | ikmmh_v2 | v3.0.0 |
+| ikmmh_v2.js | 爱看漫 | ikmmh_v2 | v3.0.1 |
 | komiic_dual.js | Komiic | Komiic | v1.0.8 |
 | laimanhua_split_hosts_v1.2.1_configurable.js | 来漫画（分流） | laimanhua_split | v1.2.1 |
 | manga51.js | 51漫画 | manga51 | v1.2.0 |
@@ -146,6 +146,7 @@ CxC 支持漫画与在线文字小说；文件版小说提供官网入口。首�
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-11-27 | 爱看漫 v3.0.1。发布用户修复版，适配新版首页卡片和详情目录，章节图片分页支持最多四个并发请求，接入本仓库更新直链。[更新与验证记录](docs/爱看漫改版适配_2026-11-27.md) |
 | 2026-11-26 | 哔哩漫画 v1.2.3。搜索遇到原站图片验证码时，可在 Venera 内手动输入并继续搜索。修复原站结果分页，并接入本仓库更新地址。[更新与回归记录](docs/哔哩漫画搜索验证修复_2026-11-26.md) |
 | 2026-11-26 | 包子漫画 v1.2.1。简体模式下，选择 `baozimhcn.com` 或 `bzmgcn.com` 时使用默认线路 `webmota.com`。新增原站网页验证入口，改进首页报错提示，并兼容缺少作者字段的详情页。[更新与回归记录](docs/包子漫画线路修复_2026-11-26.md) |
 | 2026-11-22 | 拷贝漫画 v1.6.7。修复旧 App 接口 TLS 失败导致的公开漫画加载问题，默认使用官网桌面网页，并把脚本更新地址指向本仓库。真网回归覆盖首页、搜索、分类分页、排行和作品目录。《碧蓝之海》第三卷取得 196 页，封面与三张正文图片通过抽检。App 账号功能仍依赖 App 接口。 |

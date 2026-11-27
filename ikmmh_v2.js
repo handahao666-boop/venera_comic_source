@@ -83,10 +83,10 @@ function assertSiteAccessible(res, url) {
   const body = String(res.body || "");
   if (
     Number(res.status) === 403 &&
-    /the\s+region\s+has\s+been\s+denied/i.test(body)
+    /the\s+region\s+has\s+been\s+denied|当前区域禁止访问|當前區域禁止訪問|当前地区禁止访问|當前地區禁止訪問/i.test(body)
   ) {
     throw new Error(
-      `爱看漫拒绝了当前地区的访问（403）。请在漫画源设置中填写本机可直接访问的官方域名；Cookie 或 User-Agent 无法解除地区封锁。地址：${url}`
+      `爱看漫拒绝了当前网络出口的地区（403）。请先用同一网络打开原站确认能正常访问，再刷新漫画源。地址：${url}`
     );
   }
   if (Number(res.status) === 403) {
@@ -418,11 +418,7 @@ async function fetchReadPicsImages(config, epId) {
   const expected = parseInt(config.picCount || config.pageCount || config.count || 0, 10) || 0;
   const images = [];
   const limit = 10;
-  let offset = 0;
-  let total = expected;
-  for (let guard = 0; guard < 80; guard++) {
-    if (total > 0 && offset >= total) break;
-    if (expected > 0 && offset >= expected) break;
+  const fetchPage = async (offset) => {
     const res = await validatorPost(
       `${Ikm.baseUrl}/api/comic/read/pics`,
       {
@@ -431,12 +427,27 @@ async function fetchReadPicsImages(config, epId) {
       },
       `id=${encodeURIComponent(chapterId)}&aid=${encodeURIComponent(config.aid)}&offset=${offset}&limit=${limit}`
     );
-    const parsed = parseReadPicsImages(res, epId);
-    if (!parsed.ok || parsed.images.length === 0) break;
-    parsed.images.forEach((url) => addImageUrl(images, url, epId));
-    if (parsed.total > 0) total = parsed.total;
-    offset += parsed.images.length;
-    if (parsed.images.length < (parsed.limit || limit)) break;
+    return parseReadPicsImages(res, epId);
+  };
+  // 先拉第一页，拿到 total 再并行拉剩余页
+  const first = await fetchPage(0);
+  if (!first.ok || first.images.length === 0) return images;
+  first.images.forEach((url) => addImageUrl(images, url, epId));
+  const total = first.total > 0 ? first.total : expected;
+  if (!total || total <= limit) return images;
+  const offsets = [];
+  for (let off = limit; off < total; off += limit) offsets.push(off);
+  const CONCURRENCY = 4;
+  for (let i = 0; i < offsets.length; i += CONCURRENCY) {
+    const batch = offsets.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      batch.map((off) => fetchPage(off).catch(() => null))
+    );
+    results.forEach((parsed) => {
+      if (parsed && parsed.ok) {
+        parsed.images.forEach((url) => addImageUrl(images, url, epId));
+      }
+    });
   }
   return images;
 }
@@ -756,9 +767,9 @@ class Ikm extends ComicSource {
   // 基础配置
   name = "爱看漫";
   key = "ikmmh_v2";
-  version = "3.0.0";
+  version = "3.0.1";
   minAppVersion = "1.0.0";
-  url = "https://www.ikmmh.com";
+  url = "https://raw.githubusercontent.com/handahao666-boop/venera_comic_source/main/ikmmh_v2.js";
   // 常量定义
   static baseUrl = "https://www.ikmmh.com";
   static Mobile_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
@@ -840,26 +851,60 @@ class Ikm extends ComicSource {
         try {
           let res = await validatorGet(`${Ikm.baseUrl}/`, Ikm.webHeaders);
           let document = new HtmlDocument(res.body);
-          let parseComic = (e) => {
-            let title = e.querySelector("div.title").text.split("~")[0];
-            let cover = e.querySelector("div.thumb_img").attributes["data-src"];
-            let link = `${Ikm.baseUrl}${
-              e.querySelector("a").attributes["href"]
-            }`;
+          const pickCover = (el) => {
+            const img = el.querySelector("img");
+            if (!img || !img.attributes) return "";
+            return img.attributes["data-src"] || img.attributes["src"] || "";
+          };
+          const parseCard = (el) => {
+            const a = el.querySelector("a");
+            const href = (a && a.attributes && a.attributes["href"]) || "";
+            if (!href || !/\/book\/\d+/.test(href)) return null;
+            const titleEl = el.querySelector("div.card-title");
+            let title = titleEl && titleEl.text ? titleEl.text.trim() : "";
+            if (!title && a && a.attributes && a.attributes["title"]) {
+              title = String(a.attributes["title"]).trim();
+            }
+            title = title.split("~")[0].trim();
+            if (!title) return null;
             return {
               title,
-              cover,
-              id: link,
+              cover: pickCover(el),
+              id: href.startsWith("http") ? href : `${Ikm.baseUrl}${href}`,
             };
           };
-          return {
-            "本周推荐": document
-              .querySelectorAll("div.module-good-fir > div.item")
-              .map(parseComic),
-            "今日更新": document
-              .querySelectorAll("div.module-day-fir > div.item")
-              .map(parseComic),
-          };
+          const seen = new Set();
+          const parts = {};
+          document.querySelectorAll("div.mult").forEach((section) => {
+            const titleEl =
+              section.querySelector("h2.mult-caption") || section.querySelector("h2");
+            let name = titleEl && titleEl.text ? String(titleEl.text).trim() : "";
+            if (!name) name = "推荐";
+            const comics = [];
+            section.querySelectorAll("li.card").forEach((card) => {
+              const c = parseCard(card);
+              if (c && !seen.has(c.id)) {
+                seen.add(c.id);
+                comics.push(c);
+              }
+            });
+            if (comics.length) parts[name] = comics;
+          });
+          if (!Object.keys(parts).length) {
+            const all = [];
+            document.querySelectorAll("li.card").forEach((card) => {
+              const c = parseCard(card);
+              if (c && !seen.has(c.id)) {
+                seen.add(c.id);
+                all.push(c);
+              }
+            });
+            if (all.length) parts["推荐"] = all;
+          }
+          if (!Object.keys(parts).length) {
+            throw new Error("首页未解析到任何作品，站点结构可能再次变化。");
+          }
+          return parts;
         } catch (err) {
           throw new Error(`探索页面加载失败：${err.message}`);
         }
@@ -1123,85 +1168,119 @@ class Ikm extends ComicSource {
   // 漫画详情
   comic = {
     loadInfo: async (id) => {
-      // 加载收藏页并判断是否收藏
-      let isFavorite = false;
-      try {
-        let favorites = await this.favorites.loadComics(1, null);
-        isFavorite = favorites.comics.some((comic) => comic.id === id);
-      } catch (error) {
-        console.error("加载收藏页失败:", error);
-      }
+      // 注意：不再请求书柜页判断收藏（旧版每次打开详情都多一次网络请求，游客还会跳登录页，明显拖慢）
       let res = await validatorGet(id, Ikm.webHeaders);
 
       let document = new HtmlDocument(res.body);
       let comicId = id.match(/\d+/)[0];
-      // 获取章节数据
-      let epRes = await validatorGet(
-        `${Ikm.baseUrl}/api/comic/zyz/chapterlink?id=${comicId}`,
-        {
-          ...Ikm.jsonHead,
-          "referer": id,
-        }
-      );
-      let epData = parseJsonResponse(epRes, "章节接口");
+
+      // 章节：直接取详情页 HTML 里的章节链接（站点改版后已不再提供 chapterlink 接口）
       let eps = new Map();
-      let chapterGroups = Array.isArray(epData.data)
-        ? epData.data
-        : epData.data
-          ? [epData.data]
-          : [];
-      chapterGroups.forEach((group) => {
-        let list = Array.isArray(group) ? group : group.list || group.chapters || [];
-        list.forEach((e) => {
-          let chapterUrl = absoluteUrl(e.url || e.link || e.href);
-          if (chapterUrl) eps.set(chapterUrl, e.name || e.title || "未命名章节");
+      document
+        .querySelectorAll("a.comic-chapter-link")
+        .forEach((e) => {
+          const href = (e.attributes && e.attributes["href"]) || "";
+          if (!href) return;
+          const chapterUrl = absoluteUrl(href);
+          if (chapterUrl && !eps.has(chapterUrl)) {
+            const name = String((e.attributes && e.attributes["title"]) || e.text || "").trim();
+            eps.set(chapterUrl, name || "未命名章节");
+          }
         });
-      });
       if (eps.size === 0) {
-        throw new Error(`章节数据格式异常`);
+        throw new Error("章节数据格式异常：详情页没有解析到章节链接");
       }
 
-      let titleElement = document.querySelector("div.book-hero__detail > div.title");
-      let title = (titleElement && titleElement.text) || `漫画 ${comicId}`;
-      let escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      let thumb =
-        document
-          .querySelector("div.coverimg")
-          .attributes["style"].match(/\((.*?)\)/)?.[1] || "";
-      let desc = document
-        .querySelector("article.book-container__detail")
-        .text.match(
-          new RegExp(
-            `漫画名：${escapedTitle}(?:(?:[^。]*?(?:简介|漫画简介)\\s*[:：]?\\s*)|(?:[^。]*?))([\\s\\S]+?)\\.\\.\\.。`
-          )
-        );
-      let intro = desc?.[1]?.trim().replace(/\s+/g, " ") || "";
+      // 标题：用 h1.name（规避属性值带冒号的选择器），去掉作者 span
+      let title = "";
+      try {
+        const h1 = document.querySelector("h1.name");
+        if (h1) {
+          let raw = String(h1.text || "").trim();
+          const au = h1.querySelector(".author");
+          const auText = au ? String(au.text || "").trim() : "";
+          if (auText && raw.endsWith(auText)) {
+            raw = raw.slice(0, raw.length - auText.length);
+          }
+          title = raw.trim();
+        }
+      } catch (e) {}
+      title = title.split("~")[0].trim() || `漫画 ${comicId}`;
+
+      // 封面：先定位 .book-cover 容器，再取其中的 img（规避后代选择器）
+      let thumb = "";
+      try {
+        const coverBox = document.querySelector(".book-cover");
+        const coverImg = coverBox ? coverBox.querySelector("img") : null;
+        if (coverImg && coverImg.attributes) {
+          thumb = coverImg.attributes["src"] || coverImg.attributes["data-src"] || "";
+        }
+      } catch (e) {}
+
+      // 简介：用 .comic-intro（规避属性值带冒号的选择器），去掉顶部操作栏文字
+      let intro = "";
+      try {
+        const introEl = document.querySelector(".comic-intro");
+        if (introEl) intro = String(introEl.text || "");
+      } catch (e) {}
+      intro = intro
+        .replace(/收藏\s*\d+\s*开始阅读\s*点评\s*\d+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      // 作者 / 更新 / 标签
+      const authorEl = document.querySelector(".author");
+      const author = authorEl ? String(authorEl.text || "").trim() : "";
+      let updateText = "";
+      try {
+        const ue = document.querySelector(".update_time");
+        if (ue) updateText = String(ue.text || "").trim();
+      } catch (e) {}
+      let tags = [];
+      try {
+        const typesBox = document.querySelector(".types");
+        if (typesBox) {
+          tags = typesBox
+            .querySelectorAll("a.type")
+            .map((e) => String(e.text || "").trim())
+            .filter((t) => t);
+        }
+      } catch (e) {}
+
+      // 推荐（复用新版 li.card 卡片结构）
+      const recommend = [];
+      const seenRec = new Set();
+      document.querySelectorAll("li.card").forEach((card) => {
+        const a = card.querySelector("a");
+        const href = (a && a.attributes && a.attributes["href"]) || "";
+        if (!href || !/\/book\/\d+/.test(href)) return;
+        const titleEl = card.querySelector("div.card-title");
+        let t = titleEl ? String(titleEl.text || "").trim() : "";
+        if (!t && a.attributes["title"]) t = String(a.attributes["title"]).trim();
+        t = t.split("~")[0].trim();
+        if (!t) return;
+        const cImg = card.querySelector("img");
+        const cCover = cImg
+          ? cImg.attributes["data-src"] || cImg.attributes["src"] || ""
+          : "";
+        const cid = href.startsWith("http") ? href : `${Ikm.baseUrl}${href}`;
+        if (seenRec.has(cid)) return;
+        seenRec.add(cid);
+        recommend.push({ title: t, cover: cCover, id: cid });
+      });
 
       return {
-        title: title.split("~")[0],
+        title,
         cover: thumb,
         description: intro,
         tags: {
-          "作者": [
-            document
-              .querySelector("div.book-container__author")
-              .text.split("作者：")[1],
-          ],
-          "更新": [document.querySelector("div.update > a > em").text],
-          "标签": document
-            .querySelectorAll("div.book-hero__detail > div.tags > a")
-            .map((e) => e.text.trim())
-            .filter((text) => text),
+          "作者": author ? [author] : [],
+          "更新": updateText ? [updateText] : [],
+          "标签": tags,
         },
         chapters: eps,
-        recommend: document
-          .querySelectorAll("div.module-guessu > div.item")
-          .map((e) => ({
-            title: e.querySelector("div.title").text.split("~")[0],
-            cover: e.querySelector("div.thumb_img").attributes["data-src"],
-            id: `${Ikm.baseUrl}${e.querySelector("a").attributes["href"]}`,
-          })),
-        isFavorite: isFavorite,
+        recommend,
+        isFavorite: false,
       };
     },
     onThumbnailLoad: Ikm.thumbConfig,
